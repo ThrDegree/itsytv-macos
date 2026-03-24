@@ -411,7 +411,7 @@ struct AppGridView: View {
 
     @ViewBuilder
     private func appView(for app: (bundleID: String, name: String)) -> some View {
-        if let symbolName = AppIconLoader.builtInSymbols[app.bundleID] {
+        if let symbolName = AppIconFetcher.builtInSymbols[app.bundleID] {
             AppleAppButton(name: app.name, symbolName: symbolName) {
                 manager.launchApp(bundleID: app.bundleID)
             }
