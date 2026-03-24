@@ -1,4 +1,5 @@
 import SwiftUI
+import ItsytvCore
 
 enum RemoteTab: String, CaseIterable {
     case remote = "Remote"

@@ -1,5 +1,6 @@
 import AppIntents
 import os.log
+import ItsytvCore
 
 private let log = Logger(subsystem: "com.itsytv.app", category: "Intent")
 

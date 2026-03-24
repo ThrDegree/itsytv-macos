@@ -1,5 +1,6 @@
 import SwiftUI
 import AppIntents
+import ItsytvCore
 
 @main
 struct itsytvApp: App {

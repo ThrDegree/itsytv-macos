@@ -22,25 +22,18 @@ settings:
     CODE_SIGN_IDENTITY: "Apple Development"
 
 packages:
-  SwiftProtobuf:
-    url: https://github.com/apple/swift-protobuf.git
-    from: "1.28.0"
-  SRP:
-    url: https://github.com/adam-fowler/swift-srp.git
-    from: "2.1.0"
+  ItsytvCore:
+    path: ../itsytv-core
 
 schemes:
   itsytv:
     build:
       targets:
         itsytv: all
-        itsytvTests: [test]
     run:
       config: Debug
     test:
       config: Debug
-      targets:
-        - itsytvTests
     archive:
       config: Release
   itsytv-appstore:
@@ -85,28 +78,4 @@ targets:
         Release-AppStore:
           SWIFT_ACTIVE_COMPILATION_CONDITIONS: APPSTORE
     dependencies:
-      - package: SwiftProtobuf
-      - package: SRP
-        product: SRP
-
-  itsytvTests:
-    type: bundle.unit-test
-    platform: macOS
-    sources:
-      - Tests
-      - path: itsytv
-        excludes:
-          - itsytvApp.swift
-          - UI/**
-          - AppIntents/**
-          - "**/*.proto"
-    dependencies:
-      - package: SwiftProtobuf
-      - package: SRP
-        product: SRP
-    settings:
-      base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.itsytv.tests
-        PRODUCT_MODULE_NAME: itsytv
-        GENERATE_INFOPLIST_FILE: true
-        TEST_HOST: ""
+      - package: ItsytvCore

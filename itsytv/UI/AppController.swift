@@ -4,6 +4,7 @@ import Combine
 import ServiceManagement
 import os.log
 import ObjectiveC
+import ItsytvCore
 
 private let log = Logger(subsystem: "com.itsytv.app", category: "Panel")
 
