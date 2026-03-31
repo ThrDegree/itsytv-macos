@@ -25,6 +25,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         Self.shared = self
         appController = AppController(manager: manager, iconLoader: iconLoader)
         ItsyTVShortcuts.updateAppShortcutParameters()
+        #if !APPSTORE
+        IosPromoHelper.showIfNeeded()
+        #endif
     }
 
     func applicationWillTerminate(_ notification: Notification) {
