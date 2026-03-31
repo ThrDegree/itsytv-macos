@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.5.0
+
+- Add mute button (⌘⇧M) to toggle mute on Apple TV and connected soundbars/receivers
+- Move keyboard input to top bar, toggled via keyboard icon button or ⌘K
+- Add app search bar with filtering (⌘F), off by default – enable via "Show app search" in the menu
+- Add long press support for Back (opens home), Home, and Power buttons
 ## 1.4.4
 
 - Fix Korean and other IME-based input (Japanese, Chinese) not working in keyboard text entry – characters were garbled into accented Latin due to incorrect binary plist string encoding

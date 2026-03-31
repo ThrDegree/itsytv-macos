@@ -9,6 +9,10 @@ enum RemoteTab: String, CaseIterable {
 struct RemoteControlView: View {
     @Environment(AppleTVManager.self) private var manager
     @State private var selectedTab: RemoteTab = .remote
+    @State private var showingKeyboard = false
+    @State private var keyboardText = ""
+    @State private var appSearchText = ""
+    @AppStorage("showAppsSearch") private var showAppsSearch = false
 
     private var isConnected: Bool {
         manager.connectionStatus == .connected
@@ -42,8 +46,34 @@ struct RemoteControlView: View {
                 )
                 .padding(.horizontal, 8)
 
+                // Keyboard text input (pushes content down when visible)
+                if showingKeyboard && selectedTab == .remote {
+                    HStack(spacing: 6) {
+                        Image(systemName: "magnifyingglass")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        ComposeAwareTextField(
+                            text: $keyboardText,
+                            placeholder: "Type to search...",
+                            onCommittedTextChange: { committed in
+                                manager.updateRemoteText(committed)
+                            },
+                            onSubmit: {
+                                keyboardText = ""
+                                showingKeyboard = false
+                                manager.resetTextInputState()
+                            }
+                        )
+                        .font(.caption)
+                    }
+                    .padding(.vertical, 5)
+                    .padding(.horizontal, 10)
+                    .background(Capsule().fill(Color(nsColor: DS.Colors.muted)))
+                    .padding(.horizontal, 8)
+                }
+
                 // Content — remote is always rendered to maintain size
-                ZStack(alignment: .topTrailing) {
+                ZStack(alignment: .top) {
                     ZStack {
                         // Remote always rendered (hidden when on apps to keep size)
                         VStack(spacing: 10) {
@@ -55,28 +85,58 @@ struct RemoteControlView: View {
 
                         // Apps overlaid on top when selected
                         if selectedTab == .apps {
-                            AppGridView()
+                            AppGridView(searchText: $appSearchText)
                                 .transition(.identity)
                         }
                     }
                     .animation(nil, value: selectedTab)
 
-                    // Power button (Control Center) — floats over content
+                    // Floating buttons over remote content
                     if selectedTab == .remote {
-                        Button { manager.pressButton(.pageDown) } label: {
-                            Image(systemName: "power")
-                                .font(.system(size: 11, weight: .medium))
-                                .foregroundStyle(.secondary)
-                                .frame(width: 24, height: 24)
-                                .background(Circle().fill(Color.secondary.opacity(0.12)))
+                        HStack {
+                            // Keyboard button
+                            Button {
+                                showingKeyboard.toggle()
+                                if !showingKeyboard {
+                                    keyboardText = ""
+                                    manager.resetTextInputState()
+                                }
+                            } label: {
+                                Image(systemName: "keyboard")
+                                    .font(.system(size: 11, weight: .medium))
+                                    .foregroundStyle(.secondary)
+                                    .frame(width: 24, height: 24)
+                                    .background(Circle().fill(Color.secondary.opacity(0.12)))
+                            }
+                            .buttonStyle(.plain)
+
+                            Spacer()
+
+                            // Power button (Control Center)
+                            PowerButton {
+                                manager.pressButton(.pageDown)
+                            } onLongPress: {
+                                manager.pressButton(.pageDown, action: .hold)
+                            }
                         }
-                        .buttonStyle(.plain)
-                        .padding(.trailing, 24)
+                        .padding(.horizontal, 24)
                     }
                 }
             }
             .opacity(isConnected ? 1 : 0.4)
             .allowsHitTesting(isConnected)
+        }
+        .onChange(of: manager.keyboardToggleCounter) { _, _ in
+            showingKeyboard.toggle()
+            if !showingKeyboard {
+                keyboardText = ""
+                manager.resetTextInputState()
+            }
+        }
+        .onChange(of: showAppsSearch) { _, show in
+            if show {
+                selectedTab = .apps
+            }
         }
     }
 }
@@ -269,8 +329,6 @@ struct NowPlayingProgress: View {
 
 struct RemoteTabContent: View {
     @Environment(AppleTVManager.self) private var manager
-    @State private var showingKeyboard = false
-    @State private var keyboardText = ""
     private let padding: CGFloat = 8
     private let buttonSize: CGFloat = 60
     private let buttonGap: CGFloat = 12
@@ -288,27 +346,36 @@ struct RemoteTabContent: View {
                 // Row 1: Back + TV/Home
                 HStack(spacing: buttonGap) {
                     RemoteCircleButton(imageName: "btnBack", button: .menu, shortcut: "Esc", size: buttonSize) { action in
-                        manager.pressButton(.menu, action: action)
+                        if action == .hold {
+                            manager.pressButton(.home)
+                        } else {
+                            manager.pressButton(.menu, action: action)
+                        }
                     }
                     RemoteCircleButton(imageName: "btnHome", button: .home, shortcut: "⌫", size: buttonSize) { action in
                         manager.pressButton(.home, action: action)
                     }
                 }
 
-                // Rows 2-3: Play/Pause + Keyboard left, Volume pill right
+                // Rows 2-3: Play/Pause + Mute left, Volume pill right
                 HStack(alignment: .top, spacing: buttonGap) {
                     VStack(spacing: buttonGap) {
                         RemoteCircleButton(imageName: "btnPlayPause", button: .playPause, shortcut: "Space", size: buttonSize) { action in
                             manager.pressButton(.playPause, action: action)
                         }
-                        RemoteCircleButton(imageName: "btnKeyboard", button: .siri, shortcut: "⌘K", size: buttonSize) { action in
+                        RemoteCircleButton(imageName: "btnMute", button: .siri, shortcut: "⌘⇧M", size: buttonSize) { action in
                             guard action == .click else { return }
-                            showingKeyboard.toggle()
-                            if !showingKeyboard {
-                                keyboardText = ""
-                                manager.resetTextInputState()
-                            }
+                            manager.toggleMute()
                         }
+                        // TODO: Keyboard button – decide on placement
+                        // RemoteCircleButton(imageName: "btnKeyboard", button: .siri, shortcut: "⌘K", size: buttonSize) { action in
+                        //     guard action == .click else { return }
+                        //     showingKeyboard.toggle()
+                        //     if !showingKeyboard {
+                        //         keyboardText = ""
+                        //         manager.resetTextInputState()
+                        //     }
+                        // }
                     }
 
                     VolumePill(
@@ -320,49 +387,31 @@ struct RemoteTabContent: View {
                 }
             }
 
-            if showingKeyboard {
-                ComposeAwareTextField(
-                    text: $keyboardText,
-                    onCommittedTextChange: { committed in
-                        manager.updateRemoteText(committed)
-                    },
-                    onSubmit: {
-                        keyboardText = ""
-                        showingKeyboard = false
-                        manager.resetTextInputState()
-                    }
-                )
-                .frame(height: 18)
-                .padding(.vertical, 8)
-                .padding(.horizontal, 12)
-                .background(Capsule().fill(Color(nsColor: DS.Colors.muted)))
-                .padding(.horizontal, 8)
-                .padding(.top, 8)
-            }
         }
         .padding(.horizontal, padding)
         .padding(.bottom, 12)
-        .onChange(of: manager.keyboardToggleCounter) { _, _ in
-            showingKeyboard.toggle()
-            if !showingKeyboard {
-                keyboardText = ""
-                manager.resetTextInputState()
-            }
-        }
     }
 }
 
 
 struct AppGridView: View {
+    @Binding var searchText: String
+    @AppStorage("showAppsSearch") private var showAppsSearch = false
     @Environment(AppleTVManager.self) private var manager
     @Environment(AppIconLoader.self) private var iconLoader
     @State private var apps: [(bundleID: String, name: String)] = []
     @State private var draggingBundleID: String?
+    @FocusState private var searchFocused: Bool
 
     private let columns = [
         GridItem(.flexible(), spacing: 8),
         GridItem(.flexible(), spacing: 8),
     ]
+
+    private var filteredApps: [(bundleID: String, name: String)] {
+        guard !searchText.isEmpty else { return apps }
+        return apps.filter { $0.name.localizedCaseInsensitiveContains(searchText) }
+    }
 
     var body: some View {
         if manager.installedApps.isEmpty {
@@ -374,9 +423,37 @@ struct AppGridView: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else {
+            VStack(spacing: 8) {
+                if showAppsSearch {
+                    // Search bar
+                    HStack(spacing: 6) {
+                        Image(systemName: "magnifyingglass")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        TextField("Search apps...", text: $searchText)
+                            .textFieldStyle(.plain)
+                            .font(.caption)
+                            .focused($searchFocused)
+                        if !searchText.isEmpty {
+                            Button {
+                                searchText = ""
+                            } label: {
+                                Image(systemName: "xmark.circle.fill")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                    .padding(.vertical, 5)
+                    .padding(.horizontal, 10)
+                    .background(Capsule().fill(Color(nsColor: DS.Colors.muted)))
+                    .padding(.horizontal, 16)
+                }
+
             ScrollView {
                 LazyVGrid(columns: columns, spacing: 8) {
-                    ForEach(apps, id: \.bundleID) { app in
+                    ForEach(filteredApps, id: \.bundleID) { app in
                         appView(for: app)
                             .opacity(draggingBundleID == app.bundleID ? 0.5 : 1)
                             .onDrag {
@@ -406,6 +483,14 @@ struct AppGridView: View {
                 apps = manager.orderedApps
                 iconLoader.loadIcons(for: manager.installedApps)
             }
+            .onChange(of: showAppsSearch) { _, show in
+                if show {
+                    searchFocused = true
+                } else {
+                    searchText = ""
+                }
+            }
+            } // VStack
         }
     }
 
@@ -698,9 +783,6 @@ struct VolumePill: View {
             .buttonStyle(.plain)
             .help("+")
 
-            Color(nsColor: DS.Colors.remoteButtonForeground).opacity(0.15)
-                .frame(height: 1)
-
             Button(action: { blink(); onDown() }) {
                 Image(systemName: "minus")
                     .font(.system(size: width * 0.3, weight: .medium))
@@ -720,6 +802,36 @@ struct VolumePill: View {
                 blink()
             }
         }
+    }
+}
+
+private struct PowerButton: View {
+    let onTap: () -> Void
+    let onLongPress: () -> Void
+    @State private var didLongPress = false
+
+    init(onTap: @escaping () -> Void, onLongPress: @escaping () -> Void) {
+        self.onTap = onTap
+        self.onLongPress = onLongPress
+    }
+
+    var body: some View {
+        Image(systemName: "power")
+            .font(.system(size: 11, weight: .medium))
+            .foregroundStyle(.secondary)
+            .frame(width: 24, height: 24)
+            .background(Circle().fill(Color.secondary.opacity(0.12)))
+            .onTapGesture {
+                guard !didLongPress else {
+                    didLongPress = false
+                    return
+                }
+                onTap()
+            }
+            .onLongPressGesture(minimumDuration: 0.5) {
+                didLongPress = true
+                onLongPress()
+            }
     }
 }
 

@@ -7,12 +7,22 @@ import SwiftUI
 /// outside that marked range – so callers never see intermediate composition states.
 struct ComposeAwareTextField: NSViewRepresentable {
     @Binding var text: String
+    var placeholder: String = ""
     var onCommittedTextChange: (String) -> Void
     var onSubmit: () -> Void
 
     func makeNSView(context: Context) -> NSTextField {
         let field = NSTextField()
         field.stringValue = text
+        if !placeholder.isEmpty {
+            field.placeholderAttributedString = NSAttributedString(
+                string: placeholder,
+                attributes: [
+                    .foregroundColor: NSColor.tertiaryLabelColor,
+                    .font: NSFont.systemFont(ofSize: NSFont.smallSystemFontSize, weight: .medium),
+                ]
+            )
+        }
         field.isBordered = false
         field.drawsBackground = false
         field.focusRingType = .none

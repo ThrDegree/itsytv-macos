@@ -568,6 +568,22 @@ final class AppController: NSObject, NSMenuDelegate {
                 manager.keyboardToggleCounter &+= 1
                 manager.triggerKeyboardBlink(.siri)
                 return true
+            case 3: // Cmd+F
+                let key = "showAppsSearch"
+                UserDefaults.standard.set(!UserDefaults.standard.bool(forKey: key), forKey: key)
+                return true
+            default:
+                break
+            }
+        }
+
+        // Cmd+Shift shortcuts
+        if event.modifierFlags.contains([.command, .shift]) {
+            switch event.keyCode {
+            case 46: // Cmd+Shift+M
+                manager.toggleMute()
+                manager.triggerKeyboardBlink(.siri)
+                return true
             default:
                 break
             }
@@ -650,12 +666,15 @@ struct PanelMenuButton: View {
     let deviceID: String
     let onUnpair: () -> Void
     @AppStorage("alwaysOnTop") private var alwaysOnTop = true
+    @AppStorage("showAppsSearch") private var showAppsSearch = false
     @State private var showingHotkeyRecorder = false
     @State private var currentHotkey: ShortcutKeys?
 
     var body: some View {
         Menu {
             Toggle("Always on top", isOn: $alwaysOnTop)
+            Toggle("Show app search", isOn: $showAppsSearch)
+                .keyboardShortcut("f", modifiers: .command)
             Divider()
             Button(hotkeyButtonTitle) {
                 showingHotkeyRecorder = true
