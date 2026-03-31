@@ -401,7 +401,6 @@ struct AppGridView: View {
     @Environment(AppIconLoader.self) private var iconLoader
     @State private var apps: [(bundleID: String, name: String)] = []
     @State private var draggingBundleID: String?
-    @FocusState private var searchFocused: Bool
 
     private let columns = [
         GridItem(.flexible(), spacing: 8),
@@ -430,10 +429,12 @@ struct AppGridView: View {
                         Image(systemName: "magnifyingglass")
                             .font(.caption)
                             .foregroundStyle(.secondary)
-                        TextField("Search apps...", text: $searchText)
-                            .textFieldStyle(.plain)
-                            .font(.caption)
-                            .focused($searchFocused)
+                        ComposeAwareTextField(
+                            text: $searchText,
+                            placeholder: "Search apps...",
+                            onCommittedTextChange: { _ in },
+                            onSubmit: { }
+                        )
                         if !searchText.isEmpty {
                             Button {
                                 searchText = ""
@@ -484,11 +485,7 @@ struct AppGridView: View {
                 iconLoader.loadIcons(for: manager.installedApps)
             }
             .onChange(of: showAppsSearch) { _, show in
-                if show {
-                    searchFocused = true
-                } else {
-                    searchText = ""
-                }
+                if !show { searchText = "" }
             }
             } // VStack
         }
