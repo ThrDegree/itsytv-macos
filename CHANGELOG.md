@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.5.1
+
+- Show "Taking too long? Unpair" hint after 5 seconds when connection is stuck, so users can recover without Terminal
+
 ## 1.5.0
 
 - Add mute button (⌘⇧M) to toggle mute on Apple TV and connected soundbars/receivers

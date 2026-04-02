@@ -12,6 +12,7 @@ struct RemoteControlView: View {
     @State private var showingKeyboard = false
     @State private var keyboardText = ""
     @State private var appSearchText = ""
+    @State private var showUnpairHint = false
     @AppStorage("showAppsSearch") private var showAppsSearch = false
 
     private var isConnected: Bool {
@@ -36,6 +37,26 @@ struct RemoteControlView: View {
             }
             .padding(.horizontal, 8)
             .padding(.top, 8)
+
+            // "Taking too long?" unpair hint
+            if showUnpairHint && !isConnected {
+                VStack(spacing: 4) {
+                    Text("Taking too long?")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Button("Unpair this Apple TV") {
+                        if let deviceID = manager.connectedDeviceID {
+                            KeychainStorage.delete(for: deviceID)
+                        }
+                        manager.disconnect()
+                    }
+                    .font(.caption)
+                    .foregroundStyle(.red)
+                    .buttonStyle(.plain)
+                }
+                .transition(.opacity)
+                .padding(.bottom, 4)
+            }
 
             // Controls — dimmed while connecting
             VStack(spacing: 10) {
@@ -136,6 +157,18 @@ struct RemoteControlView: View {
         .onChange(of: showAppsSearch) { _, show in
             if show {
                 selectedTab = .apps
+            }
+        }
+        .onChange(of: manager.connectionStatus) { _, status in
+            if status == .connected {
+                withAnimation { showUnpairHint = false }
+            } else if case .connecting = status {
+                showUnpairHint = false
+                DispatchQueue.main.asyncAfter(deadline: .now() + 5) {
+                    if !isConnected {
+                        withAnimation { showUnpairHint = true }
+                    }
+                }
             }
         }
     }
