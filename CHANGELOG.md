@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.5.2
+
+- Show a clear message when the apps list can't load on tvOS 26.5 (Apple beta regression we are working around)
+
 ## 1.5.1
 
 - Show "Taking too long? Unpair" hint after 5 seconds when connection is stuck, so users can recover without Terminal

@@ -447,13 +447,28 @@ struct AppGridView: View {
 
     var body: some View {
         if manager.installedApps.isEmpty {
-            VStack(spacing: 8) {
-                ProgressView()
-                Text("Loading apps...")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+            if manager.osVersion?.hasPrefix("26.5") == true {
+                VStack(spacing: 8) {
+                    Text("Apps unavailable in tvOS 26.5")
+                        .font(.title3)
+                        .fontWeight(.semibold)
+                        .multilineTextAlignment(.center)
+                    Text("We are working on the fix for tvOS 26.5")
+                        .font(.body)
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.center)
+                }
+                .padding(.horizontal, 32)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
+                VStack(spacing: 8) {
+                    ProgressView()
+                    Text("Loading apps...")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else {
             VStack(spacing: 8) {
                 if showAppsSearch {
