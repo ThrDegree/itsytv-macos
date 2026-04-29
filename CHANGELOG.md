@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.5.3
+
+- Fix apps list not loading on tvOS 26.5 by registering a TV remote control session before fetching the list (thanks to the pyatv project for finding the missing handshake step)
+
 ## 1.5.2
 
 - Show a clear message when the apps list can't load on tvOS 26.5 (Apple beta regression we are working around)
