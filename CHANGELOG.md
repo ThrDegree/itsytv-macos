@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.5.4
+
+- Add AppleScript `play` and `pause` verbs so automation tools (Hammerspoon, Keyboard Maestro, Shortcuts, `osascript`) can control playback idempotently without resuming a quiet TV (thanks @aporzio1)
+
 ## 1.5.3
 
 - Fix apps list not loading on tvOS 26.5 by registering a TV remote control session before fetching the list (thanks to the pyatv project for finding the missing handshake step)
