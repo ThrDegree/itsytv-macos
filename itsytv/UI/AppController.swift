@@ -6,6 +6,32 @@ import os.log
 import ObjectiveC
 import ItsytvCore
 
+// MARK: - Environment key for device switching
+
+private struct SwitchDeviceActionKey: EnvironmentKey {
+    static let defaultValue: ((String) -> Void)? = nil
+}
+
+extension EnvironmentValues {
+    var switchDeviceAction: ((String) -> Void)? {
+        get { self[SwitchDeviceActionKey.self] }
+        set { self[SwitchDeviceActionKey.self] = newValue }
+    }
+}
+
+// MARK: - Pairing cache
+// Caches paired device IDs so Keychain is only hit at quiet moments,
+// not during menuWillOpen or SwiftUI renders.
+
+@Observable
+final class PairingCache {
+    private(set) var pairedIDs: Set<String> = []
+
+    func refresh() {
+        pairedIDs = Set(KeychainStorage.allPairedDeviceIDs())
+    }
+}
+
 private let log = Logger(subsystem: "com.itsytv.app", category: "Panel")
 
 final class AppController: NSObject, NSMenuDelegate {
@@ -14,16 +40,19 @@ final class AppController: NSObject, NSMenuDelegate {
     let menu = NSMenu()
     private let manager: AppleTVManager
     private let iconLoader: AppIconLoader
+    private let pairingCache = PairingCache()
     private var observation: AnyCancellable?
     private var panel: NSPanel?
     private var panelDeviceID: String?
     private var keyboardMonitor: Any?
+    private var clickOutsideMonitor: Any?
     private var alwaysOnTopObserver: NSObjectProtocol?
 
     init(manager: AppleTVManager, iconLoader: AppIconLoader) {
         self.manager = manager
         self.iconLoader = iconLoader
         super.init()
+        pairingCache.refresh()
         setupStatusItem()
         rebuildMenu()
         startObserving()
@@ -33,6 +62,7 @@ final class AppController: NSObject, NSMenuDelegate {
 
     func cleanup() {
         removeKeyboardMonitor()
+        removeClickOutsideMonitor()
         if let observer = alwaysOnTopObserver {
             NotificationCenter.default.removeObserver(observer)
             alwaysOnTopObserver = nil
@@ -64,8 +94,13 @@ final class AppController: NSObject, NSMenuDelegate {
         if let deviceID {
             targetID = deviceID
         } else {
-            // Pick the first discovered device that has stored credentials
-            targetID = manager.discoveredDevices.first(where: { KeychainStorage.load(for: $0.id) != nil })?.id
+            // Prefer last-used device; fall back to first paired discovered device
+            let lastID = UserDefaults.standard.string(forKey: "lastConnectedDeviceID")
+            if let lastID, pairingCache.pairedIDs.contains(lastID) {
+                targetID = lastID
+            } else {
+                targetID = manager.discoveredDevices.first(where: { pairingCache.pairedIDs.contains($0.id) })?.id
+            }
         }
         let discoveredCount = manager.discoveredDevices.count
         log.error("openRemote: targetID=\(targetID ?? "nil", privacy: .public) discoveredCount=\(discoveredCount, privacy: .public)")
@@ -85,9 +120,15 @@ final class AppController: NSObject, NSMenuDelegate {
 
     private func connectAndShow(_ device: AppleTVDevice) {
         manager.connect(to: device)
-        if KeychainStorage.load(for: device.id) != nil {
-            showPanel()
+        if pairingCache.pairedIDs.contains(device.id) {
+            UserDefaults.standard.set(device.id, forKey: "lastConnectedDeviceID")
         }
+        showPanel()
+    }
+
+    func switchDevice(to deviceID: String) {
+        manager.disconnect()
+        openRemote(for: deviceID)
     }
 
     // MARK: - Setup
@@ -99,9 +140,72 @@ final class AppController: NSObject, NSMenuDelegate {
                 icon.size = NSSize(width: 18, height: 18)
                 button.image = icon
             }
+            button.action = #selector(statusItemClicked(_:))
+            button.target = self
+            button.sendAction(on: [.leftMouseDown, .rightMouseUp])
         }
-        statusItem.menu = menu
         menu.delegate = self
+    }
+
+    @objc private func statusItemClicked(_ sender: NSStatusBarButton) {
+        guard let event = NSApp.currentEvent else { return }
+
+        if event.type == .rightMouseUp {
+            showSettingsMenu()
+            return
+        }
+
+        // Left mouse down: toggle — if the panel was open when we clicked the
+        // status item, the click-outside monitor already flagged it so we close.
+        if panelWasOpenAtLastStatusItemClick {
+            panelWasOpenAtLastStatusItemClick = false
+            manager.disconnect()
+            return
+        }
+
+        if !pairingCache.pairedIDs.isEmpty {
+            openRemote()
+        } else {
+            // No paired devices yet — show the full menu for first-time pairing.
+            showFullMenu()
+        }
+    }
+
+    private func showFullMenu() {
+        rebuildMenu()
+        statusItem.menu = menu
+        statusItem.button?.performClick(nil)
+        statusItem.menu = nil
+    }
+
+    private func showSettingsMenu() {
+        let m = NSMenu()
+        m.addItem(createCheckboxItem(
+            title: "Launch at login",
+            isOn: SMAppService.mainApp.status == .enabled
+        ) {
+            do {
+                if SMAppService.mainApp.status == .enabled {
+                    try SMAppService.mainApp.unregister()
+                } else {
+                    try SMAppService.mainApp.register()
+                }
+            } catch {
+                log.error("Failed to toggle login item: \(error.localizedDescription)")
+            }
+        })
+        #if !APPSTORE
+        m.addItem(createActionItem(title: "Check for updates...", symbolName: "arrow.triangle.2.circlepath") {
+            UpdateChecker.check()
+        })
+        #endif
+        m.addItem(NSMenuItem.separator())
+        m.addItem(createActionItem(title: "Quit", symbolName: "power") {
+            NSApplication.shared.terminate(nil)
+        })
+        statusItem.menu = m
+        statusItem.button?.performClick(nil)
+        statusItem.menu = nil
     }
 
     private func startObserving() {
@@ -114,7 +218,7 @@ final class AppController: NSObject, NSMenuDelegate {
 
     private var lastKnownStatus: ConnectionStatus = .disconnected
     private var lastKnownDeviceCount: Int = 0
-    private var hasPairedDevice = false
+    private var panelWasOpenAtLastStatusItemClick = false
 
     private func handleStateChange() {
         let currentStatus = manager.connectionStatus
@@ -134,6 +238,7 @@ final class AppController: NSObject, NSMenuDelegate {
 
         switch currentStatus {
         case .disconnected:
+            pairingCache.refresh()
             dismissPanel()
             rebuildMenu()
         case .connecting:
@@ -145,13 +250,14 @@ final class AppController: NSObject, NSMenuDelegate {
         case .pairing, .error:
             rebuildMenu()
         case .connected:
+            pairingCache.refresh()
             menu.cancelTracking()
             showPanel()
         }
     }
 
     private var shouldShowItsyhomePromo: Bool {
-        let hasDevices = hasPairedDevice
+        let hasDevices = !pairingCache.pairedIDs.isEmpty
         let isInstalled: Bool = {
             guard let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.nickustinov.itsyhome") else {
                 return false
@@ -231,7 +337,6 @@ final class AppController: NSObject, NSMenuDelegate {
     }
 
     private func buildDeviceList() {
-        hasPairedDevice = false
         if manager.discoveredDevices.isEmpty {
             let scanning = NSMenuItem(title: "Scanning for devices...", action: nil, keyEquivalent: "")
             scanning.isEnabled = false
@@ -239,8 +344,7 @@ final class AppController: NSObject, NSMenuDelegate {
         } else {
             let sorted = manager.discoveredDevices.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
             for device in sorted {
-                let isPaired = KeychainStorage.load(for: device.id) != nil
-                if isPaired { hasPairedDevice = true }
+                let isPaired = pairingCache.pairedIDs.contains(device.id)
                 let item = createDeviceItem(device: device, isPaired: isPaired)
                 menu.addItem(item)
             }
@@ -396,6 +500,10 @@ final class AppController: NSObject, NSMenuDelegate {
         let panelContent = PanelContentView()
             .environment(manager)
             .environment(iconLoader)
+            .environment(pairingCache)
+            .environment(\.switchDeviceAction, { [weak self] deviceID in
+                self?.switchDevice(to: deviceID)
+            })
 
         let hostingView = ArrowCursorHostingView(rootView: panelContent)
         hostingView.safeAreaRegions = []
@@ -461,6 +569,7 @@ final class AppController: NSObject, NSMenuDelegate {
         self.panel = panel
         self.panelDeviceID = manager.connectedDeviceID
         installKeyboardMonitor()
+        installClickOutsideMonitor()
 
         // Observe "Always on top" toggle changes while panel is open
         alwaysOnTopObserver = NotificationCenter.default.addObserver(
@@ -487,6 +596,7 @@ final class AppController: NSObject, NSMenuDelegate {
 
     private func dismissPanel() {
         removeKeyboardMonitor()
+        removeClickOutsideMonitor()
         if let observer = alwaysOnTopObserver {
             NotificationCenter.default.removeObserver(observer)
             alwaysOnTopObserver = nil
@@ -557,7 +667,34 @@ final class AppController: NSObject, NSMenuDelegate {
         }
     }
 
+    private func installClickOutsideMonitor() {
+        removeClickOutsideMonitor()
+        clickOutsideMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] _ in
+            guard let self, let panel = self.panel, panel.isVisible else { return }
+            let loc = NSEvent.mouseLocation
+            // Status item click: let statusItemClicked handle the toggle.
+            if let buttonWindow = self.statusItem.button?.window,
+               buttonWindow.frame.contains(loc) {
+                self.panelWasOpenAtLastStatusItemClick = true
+                return
+            }
+            if !panel.frame.contains(loc) {
+                self.manager.disconnect()
+            }
+        }
+    }
+
+    private func removeClickOutsideMonitor() {
+        if let monitor = clickOutsideMonitor {
+            NSEvent.removeMonitor(monitor)
+            clickOutsideMonitor = nil
+        }
+    }
+
     private func handleRemoteKeyDown(_ event: NSEvent) -> Bool {
+        // Let the pairing view handle all keyboard input during pairing.
+        if case .pairing = manager.connectionStatus { return false }
+
         // Cmd shortcuts work even when text input is focused
         if event.modifierFlags.contains(.command) {
             switch event.keyCode {
@@ -871,6 +1008,8 @@ struct PanelContentView: View {
             switch manager.connectionStatus {
             case .connecting, .connected:
                 RemoteControlView()
+            case .pairing:
+                PairingView()
             case .error(let message):
                 ErrorView(message: message)
             default:

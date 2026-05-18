@@ -8,6 +8,8 @@ enum RemoteTab: String, CaseIterable {
 
 struct RemoteControlView: View {
     @Environment(AppleTVManager.self) private var manager
+    @Environment(PairingCache.self) private var pairingCache
+    @Environment(\.switchDeviceAction) private var switchDeviceAction
     @State private var selectedTab: RemoteTab = .remote
     @State private var showingKeyboard = false
     @State private var keyboardText = ""
@@ -23,9 +25,12 @@ struct RemoteControlView: View {
         VStack(spacing: 10) {
             // Header — always interactive
             HStack(spacing: 8) {
-                Text(manager.connectedDeviceName ?? "Apple TV")
-                    .font(.subheadline)
-                    .lineLimit(1)
+                DeviceSwitcher(
+                    currentName: manager.connectedDeviceName ?? "Apple TV",
+                    currentID: manager.connectedDeviceID,
+                    discoveredDevices: manager.discoveredDevices,
+                    onSwitch: switchDeviceAction
+                )
                 Spacer()
                 PanelMenuButton(deviceID: manager.connectedDeviceID ?? "") {
                     if let deviceID = manager.connectedDeviceID {
@@ -170,6 +175,74 @@ struct RemoteControlView: View {
                     }
                 }
             }
+        }
+    }
+}
+
+// MARK: - Device switcher
+
+private struct DeviceSwitcher: View {
+    let currentName: String
+    let currentID: String?
+    let discoveredDevices: [AppleTVDevice]
+    let onSwitch: ((String) -> Void)?
+    @Environment(PairingCache.self) private var pairingCache
+
+    private var sorted: [AppleTVDevice] {
+        discoveredDevices.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+    }
+
+    private var hasAlternativeDevices: Bool {
+        sorted.contains(where: { $0.id != currentID })
+    }
+
+    var body: some View {
+        if hasAlternativeDevices {
+            Menu {
+                let paired   = sorted.filter {  pairingCache.pairedIDs.contains($0.id) }
+                let unpaired = sorted.filter { !pairingCache.pairedIDs.contains($0.id) }
+
+                ForEach(paired, id: \.id) { device in
+                    Button {
+                        if device.id != currentID { onSwitch?(device.id) }
+                    } label: {
+                        if device.id == currentID {
+                            Label(device.name, systemImage: "checkmark")
+                        } else {
+                            Text(device.name)
+                        }
+                    }
+                    .disabled(device.id == currentID)
+                }
+
+                if !unpaired.isEmpty {
+                    Divider()
+                    ForEach(unpaired, id: \.id) { device in
+                        Button {
+                            onSwitch?(device.id)
+                        } label: {
+                            Label("Pair \(device.name)", systemImage: "plus.circle")
+                        }
+                    }
+                }
+            } label: {
+                HStack(spacing: 3) {
+                    Text(currentName)
+                        .font(.subheadline)
+                        .lineLimit(1)
+                    Image(systemName: "chevron.up.chevron.down")
+                        .font(.system(size: 8, weight: .semibold))
+                        .foregroundStyle(.secondary)
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .menuStyle(.borderlessButton)
+            .menuIndicator(.hidden)
+        } else {
+            Text(currentName)
+                .font(.subheadline)
+                .lineLimit(1)
         }
     }
 }
@@ -878,6 +951,143 @@ private struct PowerButton: View {
                 onLongPress()
             }
     }
+}
+
+// MARK: - Pairing view
+
+struct PairingView: View {
+    @Environment(AppleTVManager.self) private var manager
+    @State private var digits: [Int?] = [nil, nil, nil, nil]
+
+    private var currentIndex: Int {
+        digits.firstIndex(where: { $0 == nil }) ?? 4
+    }
+
+    var body: some View {
+        VStack(spacing: 12) {
+            HStack {
+                Text("Enter PIN from your Apple TV")
+                    .font(.subheadline.weight(.medium))
+                    .lineLimit(2)
+                    .multilineTextAlignment(.leading)
+                Spacer()
+                PanelCloseButton { manager.disconnect() }
+            }
+            .padding(.horizontal, 8)
+            .padding(.top, 8)
+
+            HStack(spacing: 8) {
+                ForEach(0..<4, id: \.self) { i in
+                    PairingDigitCell(digit: digits[i], isFocused: i == currentIndex)
+                }
+            }
+            .padding(.bottom, 20)
+        }
+        .background(
+            PairingKeyCapture(
+                onDigit: { digit in
+                    guard currentIndex < 4 else { return }
+                    digits[currentIndex] = digit
+                    if digits.allSatisfy({ $0 != nil }) {
+                        let pin = digits.compactMap { $0 }.map(String.init).joined()
+                        manager.submitPIN(pin)
+                    }
+                },
+                onBackspace: {
+                    let idx = currentIndex - 1
+                    guard idx >= 0 else { return }
+                    digits[idx] = nil
+                }
+            )
+        )
+    }
+}
+
+private struct PairingDigitCell: View {
+    let digit: Int?
+    let isFocused: Bool
+
+    var body: some View {
+        RoundedRectangle(cornerRadius: DS.Radius.md)
+            .fill(Color(nsColor: DS.Colors.muted))
+            .overlay(
+                RoundedRectangle(cornerRadius: DS.Radius.md)
+                    .strokeBorder(
+                        isFocused
+                            ? Color(nsColor: DS.Colors.foreground).opacity(0.5)
+                            : Color(nsColor: DS.Colors.border),
+                        lineWidth: 2
+                    )
+            )
+            .overlay(
+                Text(digit.map(String.init) ?? "")
+                    .font(.system(size: 18, weight: .semibold, design: .monospaced))
+                    .foregroundStyle(Color(nsColor: DS.Colors.foreground))
+            )
+            .frame(width: 36, height: 44)
+    }
+}
+
+private struct PairingKeyCapture: NSViewRepresentable {
+    let onDigit: (Int) -> Void
+    let onBackspace: () -> Void
+
+    func makeNSView(context: Context) -> PairingKeyNSView {
+        let view = PairingKeyNSView()
+        view.onDigit = onDigit
+        view.onBackspace = onBackspace
+        return view
+    }
+
+    func updateNSView(_ nsView: PairingKeyNSView, context: Context) {
+        nsView.onDigit = onDigit
+        nsView.onBackspace = onBackspace
+    }
+}
+
+private final class PairingKeyNSView: NSView {
+    var onDigit: ((Int) -> Void)?
+    var onBackspace: (() -> Void)?
+    private var monitor: Any?
+
+    override var acceptsFirstResponder: Bool { true }
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        if window != nil {
+            setupMonitor()
+            DispatchQueue.main.async { self.window?.makeFirstResponder(self) }
+        } else {
+            removeMonitor()
+        }
+    }
+
+    private func setupMonitor() {
+        removeMonitor()
+        monitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            guard let self else { return event }
+            guard let chars = event.characters else { return event }
+            for ch in chars {
+                if let digit = ch.wholeNumberValue {
+                    self.onDigit?(digit)
+                    return nil
+                } else if ch == "\u{7F}" || ch == "\u{08}" {
+                    self.onBackspace?()
+                    return nil
+                }
+            }
+            return event
+        }
+    }
+
+    private func removeMonitor() {
+        if let monitor {
+            NSEvent.removeMonitor(monitor)
+            self.monitor = nil
+        }
+    }
+
+    deinit { removeMonitor() }
 }
 
 struct ErrorView: View {
