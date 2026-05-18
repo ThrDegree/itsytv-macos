@@ -34,6 +34,8 @@ schemes:
       config: Debug
     test:
       config: Debug
+      targets:
+        - itsytvTests
     archive:
       config: Release
   itsytv-appstore:
@@ -48,6 +50,22 @@ schemes:
       config: Release-AppStore
 
 targets:
+  itsytvTests:
+    type: bundle.unit-test
+    platform: macOS
+    sources:
+      - path: itsytvTests
+      - path: itsytv/Utilities/VersionComparator.swift
+      - path: itsytv/Utilities/PlaybackMath.swift
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.itsytv.itsytvTests
+        MACOSX_DEPLOYMENT_TARGET: "14.0"
+        TEST_HOST: ""
+        BUNDLE_LOADER: ""
+        CODE_SIGNING_REQUIRED: "NO"
+        CODE_SIGN_IDENTITY: ""
+
   itsytv:
     type: application
     platform: macOS

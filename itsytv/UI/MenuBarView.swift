@@ -1,4 +1,5 @@
 import SwiftUI
+import Combine
 import ItsytvCore
 
 enum RemoteTab: String, CaseIterable {
@@ -358,8 +359,7 @@ struct NowPlayingProgress: View {
     }
 
     private var progress: Double {
-        guard duration > 0 else { return 0 }
-        return min(1, displayTime / duration)
+        seekProgress(time: displayTime, duration: duration)
     }
 
     var body: some View {
@@ -433,11 +433,8 @@ struct NowPlayingProgress: View {
         }
     }
 
-    private func formatTime(_ seconds: TimeInterval) -> String {
-        let total = max(0, Int(seconds))
-        let m = total / 60
-        let s = total % 60
-        return String(format: "%d:%02d", m, s)
+    func formatTime(_ seconds: TimeInterval) -> String {
+        formatPlaybackTime(seconds)
     }
 }
 
