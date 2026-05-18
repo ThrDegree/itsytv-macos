@@ -142,19 +142,12 @@ final class AppController: NSObject, NSMenuDelegate {
             }
             button.action = #selector(statusItemClicked(_:))
             button.target = self
-            button.sendAction(on: [.leftMouseDown, .rightMouseUp])
+            button.sendAction(on: [.leftMouseDown])
         }
         menu.delegate = self
     }
 
     @objc private func statusItemClicked(_ sender: NSStatusBarButton) {
-        guard let event = NSApp.currentEvent else { return }
-
-        if event.type == .rightMouseUp {
-            showSettingsMenu()
-            return
-        }
-
         if panel?.isVisible == true {
             manager.disconnect()
             return
@@ -171,36 +164,6 @@ final class AppController: NSObject, NSMenuDelegate {
     private func showFullMenu() {
         rebuildMenu()
         statusItem.menu = menu
-        statusItem.button?.performClick(nil)
-        statusItem.menu = nil
-    }
-
-    private func showSettingsMenu() {
-        let m = NSMenu()
-        m.addItem(createCheckboxItem(
-            title: "Launch at login",
-            isOn: SMAppService.mainApp.status == .enabled
-        ) {
-            do {
-                if SMAppService.mainApp.status == .enabled {
-                    try SMAppService.mainApp.unregister()
-                } else {
-                    try SMAppService.mainApp.register()
-                }
-            } catch {
-                log.error("Failed to toggle login item: \(error.localizedDescription)")
-            }
-        })
-        #if !APPSTORE
-        m.addItem(createActionItem(title: "Check for updates...", symbolName: "arrow.triangle.2.circlepath") {
-            UpdateChecker.check()
-        })
-        #endif
-        m.addItem(NSMenuItem.separator())
-        m.addItem(createActionItem(title: "Quit", symbolName: "power") {
-            NSApplication.shared.terminate(nil)
-        })
-        statusItem.menu = m
         statusItem.button?.performClick(nil)
         statusItem.menu = nil
     }
@@ -320,73 +283,6 @@ final class AppController: NSObject, NSMenuDelegate {
         }
 
         let item = NSMenuItem(title: device.name, action: nil, keyEquivalent: "")
-        item.view = containerView
-        return item
-    }
-
-    private func createActionItem(title: String, symbolName: String? = nil, action: @escaping () -> Void) -> NSMenuItem {
-        let height = DS.ControlSize.menuItemHeight
-        let width = DS.ControlSize.menuItemWidth
-
-        let containerView = HighlightingMenuItemView(frame: NSRect(x: 0, y: 0, width: width, height: height))
-
-        var labelX = DS.Spacing.md
-        if let symbolName {
-            let iconSize = DS.ControlSize.iconMedium
-            let iconY = (height - iconSize) / 2
-            let iconView = NSImageView(frame: NSRect(x: DS.Spacing.md, y: iconY, width: iconSize, height: iconSize))
-            iconView.image = NSImage(systemSymbolName: symbolName, accessibilityDescription: nil)
-            iconView.contentTintColor = DS.Colors.iconForeground
-            iconView.imageScaling = .scaleProportionallyUpOrDown
-            containerView.addSubview(iconView)
-            labelX = DS.Spacing.md + iconSize + DS.Spacing.sm
-        }
-
-        let labelY = (height - 17) / 2
-        let labelWidth = width - labelX - DS.Spacing.md
-        let nameLabel = NSTextField(labelWithString: title)
-        nameLabel.frame = NSRect(x: labelX, y: labelY, width: labelWidth, height: 17)
-        nameLabel.font = DS.Typography.label
-        nameLabel.textColor = DS.Colors.foreground
-        nameLabel.lineBreakMode = .byTruncatingTail
-        containerView.addSubview(nameLabel)
-
-        containerView.onAction = action
-
-        let item = NSMenuItem(title: title, action: nil, keyEquivalent: "")
-        item.view = containerView
-        return item
-    }
-
-    private func createCheckboxItem(title: String, isOn: Bool, action: @escaping () -> Void) -> NSMenuItem {
-        let height = DS.ControlSize.menuItemHeight
-        let width = DS.ControlSize.menuItemWidth
-
-        let containerView = HighlightingMenuItemView(frame: NSRect(x: 0, y: 0, width: width, height: height))
-
-        let iconSize = DS.ControlSize.iconMedium
-        let checkX = DS.Spacing.md
-        let checkY = (height - iconSize) / 2
-        let checkmark = NSTextField(labelWithString: isOn ? "✓" : "")
-        checkmark.frame = NSRect(x: checkX, y: checkY, width: iconSize, height: iconSize)
-        checkmark.font = NSFont.systemFont(ofSize: 12, weight: .semibold)
-        checkmark.textColor = DS.Colors.foreground
-        checkmark.alignment = .center
-        containerView.addSubview(checkmark)
-
-        let labelX = DS.Spacing.md + iconSize + DS.Spacing.sm
-        let labelY = (height - 17) / 2
-        let labelWidth = width - labelX - DS.Spacing.md
-        let nameLabel = NSTextField(labelWithString: title)
-        nameLabel.frame = NSRect(x: labelX, y: labelY, width: labelWidth, height: 17)
-        nameLabel.font = DS.Typography.label
-        nameLabel.textColor = DS.Colors.foreground
-        nameLabel.lineBreakMode = .byTruncatingTail
-        containerView.addSubview(nameLabel)
-
-        containerView.onAction = action
-
-        let item = NSMenuItem(title: title, action: nil, keyEquivalent: "")
         item.view = containerView
         return item
     }
