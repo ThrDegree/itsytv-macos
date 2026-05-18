@@ -348,7 +348,8 @@ struct NowPlayingProgress: View {
     @State private var seekTime: TimeInterval = 0
     /// After seeking, hold the seeked position until the server catches up.
     @State private var pendingSeekTarget: TimeInterval?
-    private let timer = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
+    private let timer = Timer.publish(every: 1, on: .main, in: .common)
+    @State private var timerConnection: (any Cancellable)?
 
     private var displayTime: TimeInterval {
         if isSeeking { return seekTime }
@@ -408,7 +409,14 @@ struct NowPlayingProgress: View {
                     .onTapGesture { showRemainingTime.toggle() }
             }
         }
-        .onAppear { currentTime = nowPlaying?.currentPosition ?? 0 }
+        .onAppear {
+            currentTime = nowPlaying?.currentPosition ?? 0
+            timerConnection = timer.connect()
+        }
+        .onDisappear {
+            timerConnection?.cancel()
+            timerConnection = nil
+        }
         .onReceive(timer) { _ in
             if !isSeeking {
                 let serverTime = nowPlaying?.currentPosition ?? 0

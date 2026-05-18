@@ -155,10 +155,7 @@ final class AppController: NSObject, NSMenuDelegate {
             return
         }
 
-        // Left mouse down: toggle — if the panel was open when we clicked the
-        // status item, the click-outside monitor already flagged it so we close.
-        if panelWasOpenAtLastStatusItemClick {
-            panelWasOpenAtLastStatusItemClick = false
+        if panel?.isVisible == true {
             manager.disconnect()
             return
         }
@@ -218,7 +215,6 @@ final class AppController: NSObject, NSMenuDelegate {
 
     private var lastKnownStatus: ConnectionStatus = .disconnected
     private var lastKnownDeviceCount: Int = 0
-    private var panelWasOpenAtLastStatusItemClick = false
 
     private func handleStateChange() {
         let currentStatus = manager.connectionStatus
@@ -233,6 +229,7 @@ final class AppController: NSObject, NSMenuDelegate {
         }
 
         guard currentStatus != lastKnownStatus || currentDeviceCount != lastKnownDeviceCount else { return }
+        let previousStatus = lastKnownStatus
         lastKnownStatus = currentStatus
         lastKnownDeviceCount = currentDeviceCount
 
@@ -240,100 +237,20 @@ final class AppController: NSObject, NSMenuDelegate {
         case .disconnected:
             pairingCache.refresh()
             dismissPanel()
-            rebuildMenu()
-        case .connecting:
-            if panel != nil {
-                // Panel already open — SwiftUI will update content
-            } else {
-                rebuildMenu()
-            }
-        case .pairing, .error:
-            rebuildMenu()
         case .connected:
-            pairingCache.refresh()
+            if case .pairing = previousStatus { pairingCache.refresh() }
             menu.cancelTracking()
             showPanel()
+        default:
+            break
         }
-    }
-
-    private var shouldShowItsyhomePromo: Bool {
-        let hasDevices = !pairingCache.pairedIDs.isEmpty
-        let isInstalled: Bool = {
-            guard let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.nickustinov.itsyhome") else {
-                return false
-            }
-            let path = url.path
-            return path.hasPrefix("/Applications/") || path.hasPrefix(NSHomeDirectory() + "/Applications/")
-        }()
-        return hasDevices && !isInstalled
     }
 
     // MARK: - Menu building
 
     private func rebuildMenu() {
         menu.removeAllItems()
-
-        switch manager.connectionStatus {
-        case .disconnected:
-            buildDeviceList()
-        case .connecting:
-            if panel != nil { return }
-            let item = NSMenuItem(title: "Connecting...", action: nil, keyEquivalent: "")
-            item.isEnabled = false
-            menu.addItem(item)
-        case .pairing:
-            let pairing = PairingMenuItem(manager: manager)
-            menu.addItem(pairing)
-        case .error(let message):
-            let errorItem = NSMenuItem(title: message, action: nil, keyEquivalent: "")
-            errorItem.isEnabled = false
-            menu.addItem(errorItem)
-            menu.addItem(NSMenuItem.separator())
-            let dismissItem = createActionItem(title: "Dismiss") { [weak self] in
-                self?.manager.disconnect()
-            }
-            menu.addItem(dismissItem)
-        case .connected:
-            buildDeviceList()
-        }
-
-        switch manager.connectionStatus {
-        case .pairing, .connecting:
-            break
-        default:
-            menu.addItem(NSMenuItem.separator())
-            #if !APPSTORE
-            if shouldShowItsyhomePromo {
-                menu.addItem(createItsyhomePromoItem())
-                menu.addItem(NSMenuItem.separator())
-            }
-            #endif
-            let loginItem = createCheckboxItem(
-                title: "Launch at login",
-                isOn: SMAppService.mainApp.status == .enabled
-            ) {
-                do {
-                    if SMAppService.mainApp.status == .enabled {
-                        try SMAppService.mainApp.unregister()
-                    } else {
-                        try SMAppService.mainApp.register()
-                    }
-                } catch {
-                    log.error("Failed to toggle login item: \(error.localizedDescription)")
-                }
-            }
-            menu.addItem(loginItem)
-            #if !APPSTORE
-            let updateItem = createActionItem(title: "Check for updates...", symbolName: "arrow.triangle.2.circlepath") {
-                UpdateChecker.check()
-            }
-            menu.addItem(updateItem)
-            #endif
-            let quitItem = createActionItem(title: "Quit", symbolName: "power") {
-                NSApplication.shared.terminate(nil)
-            }
-            menu.addItem(quitItem)
-        }
+        buildDeviceList()
     }
 
     private func buildDeviceList() {
@@ -474,22 +391,6 @@ final class AppController: NSObject, NSMenuDelegate {
         return item
     }
 
-    private func createItsyhomePromoItem() -> NSMenuItem {
-        let width = DS.ControlSize.menuItemWidth
-        let height: CGFloat = 64
-
-        let containerView = ItsyhomePromoView(frame: NSRect(x: 0, y: 0, width: width, height: height))
-        containerView.onAction = {
-            if let url = URL(string: "macappstore://apps.apple.com/app/itsyhome/id6758070650") {
-                NSWorkspace.shared.open(url)
-            }
-        }
-
-        let item = NSMenuItem(title: "Itsyhome", action: nil, keyEquivalent: "")
-        item.view = containerView
-        return item
-    }
-
     // MARK: - Panel
 
     private func showPanel() {
@@ -554,16 +455,18 @@ final class AppController: NSObject, NSMenuDelegate {
         // Position after makeKeyAndOrderFront — AppKit constrains the
         // frame during ordering for .statusBar level panels, so we must
         // set the origin after the window is on screen.
-        if let origin = savedPanelOrigin(panelHeight: panel.frame.height), isPointOnScreen(origin, panelSize: panel.frame.size) {
-            log.info("showPanel: using saved origin (\(origin.x), \(origin.y))")
-            panel.setFrameOrigin(origin)
-        } else if let buttonFrame = statusItem.button?.window?.frame {
-            let x = buttonFrame.midX - 88
-            let y = buttonFrame.minY - panel.frame.height
-            log.info("showPanel: using status bar fallback (\(x), \(y))")
+        if let statusButtonFrame = statusItemButtonFrameInScreen() {
+            let x = statusButtonFrame.midX - (panel.frame.width / 2)
+            let y = statusButtonFrame.minY - panel.frame.height
+            log.info("showPanel: anchoring to status item at (\(x), \(y))")
+            panel.setFrameOrigin(NSPoint(x: x, y: y))
+        } else if let screen = NSScreen.main?.visibleFrame {
+            let x = screen.midX - (panel.frame.width / 2)
+            let y = screen.maxY - panel.frame.height - 8
+            log.warning("showPanel: missing status item frame, using screen fallback (\(x), \(y))")
             panel.setFrameOrigin(NSPoint(x: x, y: y))
         } else {
-            log.warning("showPanel: no saved origin and no status bar button frame")
+            log.warning("showPanel: missing status item and screen frames")
         }
 
         self.panel = panel
@@ -601,54 +504,14 @@ final class AppController: NSObject, NSMenuDelegate {
             NotificationCenter.default.removeObserver(observer)
             alwaysOnTopObserver = nil
         }
-        savePanelPosition()
         panel?.close()
         panel = nil
         panelDeviceID = nil
     }
 
-    private func savePanelPosition() {
-        guard let frame = panel?.frame else {
-            log.debug("save: no panel frame")
-            return
-        }
-        guard let deviceID = panelDeviceID else {
-            log.debug("save: no panelDeviceID")
-            return
-        }
-        // Save top-left corner (x, maxY) — the visual anchor point.
-        // AppKit origin is bottom-left, but top-left stays stable
-        // regardless of panel height changes from SwiftUI layout.
-        let dict: [String: CGFloat] = ["x": frame.minX, "topY": frame.maxY]
-        UserDefaults.standard.set(dict, forKey: "panelOrigin_\(deviceID)")
-        log.info("save: topLeft (\(frame.minX), \(frame.maxY)) for device \(deviceID)")
-    }
-
-    private func savedPanelOrigin(panelHeight: CGFloat) -> NSPoint? {
-        guard let deviceID = manager.connectedDeviceID else {
-            log.debug("restore: no connectedDeviceID")
-            return nil
-        }
-        let key = "panelOrigin_\(deviceID)"
-        guard let dict = UserDefaults.standard.dictionary(forKey: key) else {
-            log.debug("restore: no saved value for key \(key)")
-            return nil
-        }
-        guard let x = dict["x"] as? CGFloat, let topY = dict["topY"] as? CGFloat else {
-            log.debug("restore: bad dict format: \(dict)")
-            return nil
-        }
-        // Convert top-left back to AppKit bottom-left origin
-        let origin = NSPoint(x: x, y: topY - panelHeight)
-        log.info("restore: topLeft (\(x), \(topY)) → origin (\(origin.x), \(origin.y)) for device \(deviceID)")
-        return origin
-    }
-
-    private func isPointOnScreen(_ origin: NSPoint, panelSize: NSSize) -> Bool {
-        let panelRect = NSRect(origin: origin, size: panelSize)
-        let onScreen = NSScreen.screens.contains { $0.visibleFrame.intersects(panelRect) }
-        log.info("onScreen check: (\(origin.x), \(origin.y)) size \(panelSize.width)x\(panelSize.height) → \(onScreen)")
-        return onScreen
+    private func statusItemButtonFrameInScreen() -> NSRect? {
+        guard let button = statusItem.button, let window = button.window else { return nil }
+        return window.convertToScreen(button.convert(button.bounds, to: nil))
     }
 
     private func installKeyboardMonitor() {
@@ -672,12 +535,6 @@ final class AppController: NSObject, NSMenuDelegate {
         clickOutsideMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] _ in
             guard let self, let panel = self.panel, panel.isVisible else { return }
             let loc = NSEvent.mouseLocation
-            // Status item click: let statusItemClicked handle the toggle.
-            if let buttonWindow = self.statusItem.button?.window,
-               buttonWindow.frame.contains(loc) {
-                self.panelWasOpenAtLastStatusItemClick = true
-                return
-            }
             if !panel.frame.contains(loc) {
                 self.manager.disconnect()
             }
@@ -824,6 +681,13 @@ struct PanelMenuButton: View {
             }
             Divider()
             Button("Unpair", role: .destructive, action: onUnpair)
+            Divider()
+            Toggle("Launch at login", isOn: launchAtLoginBinding)
+            #if !APPSTORE
+            Button("Check for updates...") { UpdateChecker.check() }
+            #endif
+            Divider()
+            Button("Quit", role: .destructive) { NSApplication.shared.terminate(nil) }
         } label: {
             ZStack {
                 Circle()
@@ -854,6 +718,15 @@ struct PanelMenuButton: View {
             return "Change hotkey (\(keys.displayString))"
         }
         return "Assign hotkey..."
+    }
+
+    private var launchAtLoginBinding: Binding<Bool> {
+        Binding(
+            get: { SMAppService.mainApp.status == .enabled },
+            set: { newValue in
+                try? newValue ? SMAppService.mainApp.register() : SMAppService.mainApp.unregister()
+            }
+        )
     }
 }
 
@@ -1025,7 +898,6 @@ struct PanelContentView: View {
 extension AppController: NSWindowDelegate {
     func windowWillClose(_ notification: Notification) {
         if (notification.object as? NSPanel) === panel {
-            savePanelPosition()
             if manager.connectionStatus != .disconnected {
                 manager.disconnect()
             }
@@ -1035,325 +907,3 @@ extension AppController: NSWindowDelegate {
     }
 }
 
-// MARK: - Pairing menu item
-
-final class PairingMenuItem: NSMenuItem {
-
-    private let manager: AppleTVManager
-    private var digits: [Int?] = [nil, nil, nil, nil]
-    private var digitLabels: [NSTextField] = []
-    private var digitBoxes: [NSView] = []
-    private weak var containerView: PairingContainerView?
-
-    init(manager: AppleTVManager) {
-        self.manager = manager
-        super.init(title: "Pairing", action: nil, keyEquivalent: "")
-        self.view = buildView()
-    }
-
-    required init(coder: NSCoder) {
-        fatalError()
-    }
-
-    private var currentIndex: Int {
-        digits.firstIndex(where: { $0 == nil }) ?? 4
-    }
-
-    private func buildView() -> NSView {
-        let width = DS.ControlSize.menuItemWidth
-        let padding = DS.Spacing.lg
-
-        // Layout
-        let digitBoxSize: CGFloat = 44
-        let digitBoxSpacing: CGFloat = DS.Spacing.sm
-        let allDigitsWidth = digitBoxSize * 4 + digitBoxSpacing * 3
-        let titleHeight: CGFloat = 17
-        let closeButtonSize: CGFloat = 20
-        let topPadding = DS.Spacing.md
-        let afterTitle = DS.Spacing.md
-        let bottomPadding = DS.Spacing.lg
-
-        let totalHeight = topPadding + titleHeight + afterTitle + digitBoxSize + bottomPadding
-
-        let container = PairingContainerView(
-            frame: NSRect(x: 0, y: 0, width: width, height: totalHeight),
-            onDigit: { [weak self] digit in self?.enterDigit(digit) },
-            onBackspace: { [weak self] in self?.backspace() }
-        )
-        containerView = container
-
-        // Title
-        let titleY = totalHeight - topPadding - titleHeight
-        let title = NSTextField(labelWithString: "Enter PIN from your Apple TV")
-        title.frame = NSRect(x: padding, y: titleY, width: width - padding * 2 - closeButtonSize - DS.Spacing.sm, height: titleHeight)
-        title.font = DS.Typography.labelMedium
-        title.textColor = DS.Colors.foreground
-        container.addSubview(title)
-
-        // Close (X) button — top right
-        let closeX = width - padding - closeButtonSize
-        let closeY = titleY + (titleHeight - closeButtonSize) / 2
-        let closeButton = CloseButton(frame: NSRect(x: closeX, y: closeY, width: closeButtonSize, height: closeButtonSize))
-        closeButton.onPress = { [weak self] in
-            self?.manager.disconnect()
-        }
-        container.addSubview(closeButton)
-
-        // Digit boxes — centered
-        let digitsY = titleY - afterTitle - digitBoxSize
-        let digitsX = (width - allDigitsWidth) / 2
-        let digitBoxBg = NSColor(name: nil) { $0.isDark ? NSColor(white: 0.22, alpha: 1) : NSColor(white: 0.82, alpha: 1) }
-        let digitBoxBorder = NSColor(name: nil) { $0.isDark ? NSColor(white: 0.40, alpha: 1) : NSColor(white: 0.60, alpha: 1) }
-        let digitBoxFocusBorder = NSColor(name: nil) { $0.isDark ? NSColor(white: 0.70, alpha: 1) : NSColor(white: 0.30, alpha: 1) }
-
-        for i in 0..<4 {
-            let boxX = digitsX + CGFloat(i) * (digitBoxSize + digitBoxSpacing)
-            let box = DigitBoxView(frame: NSRect(x: boxX, y: digitsY, width: digitBoxSize, height: digitBoxSize))
-            box.bgColor = digitBoxBg
-            box.borderColor = digitBoxBorder
-            box.focusBorderColor = digitBoxFocusBorder
-            container.addSubview(box)
-            digitBoxes.append(box)
-
-            let labelHeight: CGFloat = 22
-            let labelY = (digitBoxSize - labelHeight) / 2
-            let label = NSTextField(labelWithString: "")
-            label.frame = NSRect(x: 0, y: labelY, width: digitBoxSize, height: labelHeight)
-            label.font = NSFont.monospacedDigitSystemFont(ofSize: 18, weight: .semibold)
-            label.textColor = DS.Colors.foreground
-            label.alignment = .center
-            box.addSubview(label)
-            digitLabels.append(label)
-        }
-
-        updateDigitDisplay()
-        return container
-    }
-
-    func enterDigit(_ digit: Int) {
-        guard currentIndex < 4 else { return }
-        digits[currentIndex] = digit
-        updateDigitDisplay()
-        if currentIndex == 4 {
-            let pin = digits.compactMap { $0 }.map(String.init).joined()
-            manager.submitPIN(pin)
-        }
-    }
-
-    func backspace() {
-        let idx = currentIndex - 1
-        guard idx >= 0 else { return }
-        digits[idx] = nil
-        updateDigitDisplay()
-    }
-
-    private func updateDigitDisplay() {
-        for (i, label) in digitLabels.enumerated() {
-            label.stringValue = digits[i].map(String.init) ?? ""
-        }
-        for (i, box) in digitBoxes.enumerated() {
-            if let digitBox = box as? DigitBoxView {
-                digitBox.isFocused = i == currentIndex
-                digitBox.needsDisplay = true
-            }
-        }
-    }
-}
-
-// MARK: - Digit box
-
-private final class DigitBoxView: NSView {
-
-    var bgColor: NSColor = .gray
-    var borderColor: NSColor = .darkGray
-    var focusBorderColor: NSColor = .black
-    var isFocused = false
-
-    override func draw(_ dirtyRect: NSRect) {
-        bgColor.setFill()
-        let path = NSBezierPath(roundedRect: bounds, xRadius: DS.Radius.md, yRadius: DS.Radius.md)
-        path.fill()
-
-        let strokeColor = isFocused ? focusBorderColor : borderColor
-        strokeColor.setStroke()
-        let strokePath = NSBezierPath(roundedRect: bounds.insetBy(dx: 1, dy: 1), xRadius: DS.Radius.md, yRadius: DS.Radius.md)
-        strokePath.lineWidth = 2
-        strokePath.stroke()
-    }
-}
-
-// MARK: - Itsyhome promo banner
-
-private final class ItsyhomePromoView: HighlightingMenuItemView {
-
-    private var isHovered = false
-
-    override init(frame: NSRect) {
-        super.init(frame: frame)
-        onMouseEnter = { [weak self] in self?.isHovered = true }
-        onMouseExit = { [weak self] in self?.isHovered = false }
-        setupContent()
-    }
-
-    required init?(coder: NSCoder) { fatalError() }
-
-    private func setupContent() {
-        let width = bounds.width
-        let height = bounds.height
-        let insetX: CGFloat = 4
-        let insetRect = NSRect(x: insetX, y: 0, width: width - insetX * 2, height: height)
-
-        // Icon
-        let iconSize: CGFloat = 32
-        let iconX = insetRect.minX + DS.Spacing.md
-        let iconY = (height - iconSize) / 2
-        let iconView = NSImageView(frame: NSRect(x: iconX, y: iconY, width: iconSize, height: iconSize))
-        iconView.image = Bundle.main.image(forResource: "itsyhome-icon")
-        iconView.imageScaling = .scaleProportionallyUpOrDown
-        iconView.wantsLayer = true
-        iconView.layer?.cornerRadius = 6
-        iconView.layer?.masksToBounds = true
-        addSubview(iconView)
-
-        // Title
-        let textX = iconX + iconSize + DS.Spacing.sm
-        let chevronSize: CGFloat = 10
-        let textMaxWidth = insetRect.maxX - textX - DS.Spacing.md - chevronSize - DS.Spacing.xs
-        let titleLabel = NSTextField(labelWithString: "HomeKit in menu bar")
-        titleLabel.frame = NSRect(x: textX, y: height / 2 + 1, width: textMaxWidth, height: 17)
-        titleLabel.font = NSFont.systemFont(ofSize: 12, weight: .bold)
-        titleLabel.textColor = .white
-        titleLabel.lineBreakMode = .byTruncatingTail
-        addSubview(titleLabel)
-
-        // Subtitle
-        let subtitleLabel = NSTextField(labelWithString: "Try Itsyhome – it's free")
-        subtitleLabel.frame = NSRect(x: textX, y: height / 2 - 16, width: textMaxWidth, height: 15)
-        subtitleLabel.font = NSFont.systemFont(ofSize: 12, weight: .regular)
-        subtitleLabel.textColor = NSColor.white.withAlphaComponent(0.75)
-        subtitleLabel.lineBreakMode = .byTruncatingTail
-        addSubview(subtitleLabel)
-
-        // Chevron
-        let chevronX = insetRect.maxX - DS.Spacing.md - chevronSize
-        let chevronY = (height - chevronSize) / 2
-        let chevronView = NSImageView(frame: NSRect(x: chevronX, y: chevronY, width: chevronSize, height: chevronSize))
-        chevronView.image = NSImage(systemSymbolName: "chevron.right", accessibilityDescription: nil)
-        chevronView.contentTintColor = NSColor.white.withAlphaComponent(0.75)
-        chevronView.imageScaling = .scaleProportionallyUpOrDown
-        addSubview(chevronView)
-    }
-
-    override func draw(_ dirtyRect: NSRect) {
-        let insetRect = bounds.insetBy(dx: 4, dy: 0)
-
-        if isHovered {
-            NSColor.selectedContentBackgroundColor.setFill()
-            NSBezierPath(roundedRect: insetRect, xRadius: 4, yRadius: 4).fill()
-        } else {
-            let gradient = NSGradient(
-                starting: DS.Colors.promoGradientStart,
-                ending: DS.Colors.promoGradientEnd
-            )
-            gradient?.draw(in: NSBezierPath(roundedRect: insetRect, xRadius: 6, yRadius: 6), angle: 0)
-        }
-    }
-}
-
-// MARK: - Pairing container (captures keyboard)
-
-private final class PairingContainerView: NSView {
-
-    var onDigit: ((Int) -> Void)?
-    var onBackspace: (() -> Void)?
-
-    override var acceptsFirstResponder: Bool { true }
-
-    init(frame: NSRect, onDigit: @escaping (Int) -> Void, onBackspace: @escaping () -> Void) {
-        self.onDigit = onDigit
-        self.onBackspace = onBackspace
-        super.init(frame: frame)
-    }
-
-    required init?(coder: NSCoder) { fatalError() }
-
-    override func viewDidMoveToWindow() {
-        super.viewDidMoveToWindow()
-        if window != nil {
-            DispatchQueue.main.async { [weak self] in
-                self?.window?.makeFirstResponder(self)
-            }
-        }
-    }
-
-    override func keyDown(with event: NSEvent) {
-        guard let chars = event.characters else { return }
-        for ch in chars {
-            if let digit = ch.wholeNumberValue {
-                onDigit?(digit)
-            } else if ch == "\u{7F}" || ch == "\u{08}" {
-                onBackspace?()
-            }
-        }
-    }
-}
-
-// MARK: - Close button (X)
-
-private final class CloseButton: NSView {
-
-    var onPress: (() -> Void)?
-    private var isHovered = false
-    private var trackingArea: NSTrackingArea?
-
-    override func updateTrackingAreas() {
-        super.updateTrackingAreas()
-        if let existing = trackingArea { removeTrackingArea(existing) }
-        let area = NSTrackingArea(
-            rect: bounds,
-            options: [.mouseEnteredAndExited, .activeAlways],
-            owner: self,
-            userInfo: nil
-        )
-        addTrackingArea(area)
-        trackingArea = area
-    }
-
-    override func mouseEntered(with event: NSEvent) {
-        isHovered = true
-        needsDisplay = true
-    }
-
-    override func mouseExited(with event: NSEvent) {
-        isHovered = false
-        needsDisplay = true
-    }
-
-    override func mouseUp(with event: NSEvent) {
-        if bounds.contains(convert(event.locationInWindow, from: nil)) {
-            enclosingMenuItem?.menu?.cancelTracking()
-            onPress?()
-        }
-    }
-
-    override func draw(_ dirtyRect: NSRect) {
-        // Circle background
-        let circleBg: NSColor = isHovered
-            ? DS.Colors.muted
-            : DS.Colors.secondary
-        circleBg.setFill()
-        NSBezierPath(ovalIn: bounds).fill()
-
-        // X mark
-        let inset: CGFloat = 6
-        let path = NSBezierPath()
-        path.move(to: NSPoint(x: inset, y: inset))
-        path.line(to: NSPoint(x: bounds.width - inset, y: bounds.height - inset))
-        path.move(to: NSPoint(x: bounds.width - inset, y: inset))
-        path.line(to: NSPoint(x: inset, y: bounds.height - inset))
-        path.lineWidth = 1.5
-        path.lineCapStyle = .round
-        DS.Colors.mutedForeground.setStroke()
-        path.stroke()
-    }
-}

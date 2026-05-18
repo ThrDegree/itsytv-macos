@@ -34,6 +34,10 @@ class HighlightingMenuItemView: NSView {
             updateTextColors(highlighted: false)
             needsDisplay = true
         }
+        if window == nil {
+            originalTextColors.removeAll()
+            originalTintColors.removeAll()
+        }
     }
 
     override func mouseEntered(with event: NSEvent) {
