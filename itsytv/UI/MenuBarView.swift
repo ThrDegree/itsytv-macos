@@ -1,5 +1,4 @@
 import SwiftUI
-import Combine
 import ItsytvCore
 
 enum RemoteTab: String, CaseIterable {
@@ -330,7 +329,8 @@ struct NowPlayingBar: View {
             NowPlayingProgress(
                 nowPlaying: np,
                 duration: np?.duration ?? 0,
-                onSeek: { position in mrp.seekToPosition(position) }
+                onSeek: { position in mrp.seekToPosition(position) },
+                nowPlayingProvider: { mrp.nowPlaying }
             )
             .opacity(hasContent && (np?.duration ?? 0) > 0 ? 1 : 0.3)
         }
@@ -343,6 +343,7 @@ struct NowPlayingProgress: View {
     let nowPlaying: NowPlayingState?
     let duration: TimeInterval
     var onSeek: ((Double) -> Void)?
+    var nowPlayingProvider: (() -> NowPlayingState?)? = nil
 
     @AppStorage("showRemainingTime") private var showRemainingTime = false
     @State private var currentTime: TimeInterval = 0
@@ -350,8 +351,8 @@ struct NowPlayingProgress: View {
     @State private var seekTime: TimeInterval = 0
     /// After seeking, hold the seeked position until the server catches up.
     @State private var pendingSeekTarget: TimeInterval?
-    private let timer = Timer.publish(every: 1, on: .main, in: .common)
-    @State private var timerConnection: (any Cancellable)?
+    @State private var lastServerTime: TimeInterval = 0
+    private let timer = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
 
     private var displayTime: TimeInterval {
         if isSeeking { return seekTime }
@@ -360,7 +361,11 @@ struct NowPlayingProgress: View {
     }
 
     private var progress: Double {
-        seekProgress(time: displayTime, duration: duration)
+        seekProgress(time: displayTime, duration: effectiveDuration)
+    }
+
+    private var effectiveDuration: TimeInterval {
+        nowPlayingProvider?()?.duration ?? duration
     }
 
     var body: some View {
@@ -380,15 +385,15 @@ struct NowPlayingProgress: View {
                 .gesture(
                     DragGesture(minimumDistance: 0)
                         .onChanged { value in
-                            guard duration > 0 else { return }
+                            guard effectiveDuration > 0 else { return }
                             isSeeking = true
                             let fraction = max(0, min(1, value.location.x / geo.size.width))
-                            seekTime = fraction * duration
+                            seekTime = fraction * effectiveDuration
                         }
                         .onEnded { value in
-                            guard duration > 0 else { return }
+                            guard effectiveDuration > 0 else { return }
                             let fraction = max(0, min(1, value.location.x / geo.size.width))
-                            let position = fraction * duration
+                            let position = fraction * effectiveDuration
                             onSeek?(position)
                             currentTime = position
                             pendingSeekTarget = position
@@ -403,23 +408,39 @@ struct NowPlayingProgress: View {
                     .font(.system(size: 9, design: .monospaced))
                     .foregroundStyle(.tertiary)
                 Spacer()
-                Text(showRemainingTime ? "-\(formatTime(duration - displayTime))" : formatTime(duration))
+                Text(showRemainingTime ? "-\(formatTime(effectiveDuration - displayTime))" : formatTime(effectiveDuration))
                     .font(.system(size: 9, design: .monospaced))
                     .foregroundStyle(.tertiary)
                     .onTapGesture { showRemainingTime.toggle() }
             }
         }
         .onAppear {
-            currentTime = nowPlaying?.currentPosition ?? 0
-            timerConnection = timer.connect()
+            let initialNowPlaying = nowPlayingProvider?() ?? nowPlaying
+            let initial = initialNowPlaying?.currentPosition ?? 0
+            currentTime = initial
+            lastServerTime = initial
         }
-        .onDisappear {
-            timerConnection?.cancel()
-            timerConnection = nil
+        .onChange(of: nowPlaying?.currentPosition) { _, position in
+            guard !isSeeking, let position else { return }
+            lastServerTime = position
+            if let target = pendingSeekTarget {
+                if abs(position - target) < 3 {
+                    pendingSeekTarget = nil
+                }
+            } else {
+                currentTime = position
+            }
         }
         .onReceive(timer) { _ in
-            if !isSeeking {
-                let serverTime = nowPlaying?.currentPosition ?? 0
+            guard !isSeeking else { return }
+            let liveNowPlaying = nowPlayingProvider?() ?? nowPlaying
+            let liveDuration = liveNowPlaying?.duration ?? duration
+            let serverTime = liveNowPlaying?.currentPosition ?? lastServerTime
+            let isPlaying = liveNowPlaying?.isPlaying ?? false
+
+            // Prefer server truth when it changes.
+            if abs(serverTime - lastServerTime) > 0.01 {
+                lastServerTime = serverTime
                 if let target = pendingSeekTarget {
                     // Clear hold once the server reports a position near the seek target
                     if abs(serverTime - target) < 3 {
@@ -429,6 +450,12 @@ struct NowPlayingProgress: View {
                 } else {
                     currentTime = serverTime
                 }
+                return
+            }
+
+            // Fall back to local progression if server snapshots are stale.
+            if pendingSeekTarget == nil && liveDuration > 0 && (isPlaying || currentTime > 0) {
+                currentTime = min(liveDuration, currentTime + 1)
             }
         }
     }
@@ -1214,4 +1241,3 @@ struct SettingsView: View {
         .frame(width: 400, height: 300)
     }
 }
-

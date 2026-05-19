@@ -38,6 +38,7 @@ final class PairingCache {
 private let log = Logger(subsystem: "com.itsytv.app", category: "Panel")
 private let panelWidth: CGFloat = 176
 
+@MainActor
 final class AppController: NSObject {
 
     let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
@@ -78,10 +79,14 @@ final class AppController: NSObject {
         let nc = NSWorkspace.shared.notificationCenter
         sleepObservers = [
             nc.addObserver(forName: NSWorkspace.willSleepNotification, object: nil, queue: .main) { [weak self] _ in
-                self?.manager.disconnect()
+                Task { @MainActor [weak self] in
+                    self?.manager.disconnect()
+                }
             },
             nc.addObserver(forName: NSWorkspace.didWakeNotification, object: nil, queue: .main) { [weak self] _ in
-                self?.manager.startScanning()
+                Task { @MainActor [weak self] in
+                    self?.manager.startScanning()
+                }
             },
         ]
     }

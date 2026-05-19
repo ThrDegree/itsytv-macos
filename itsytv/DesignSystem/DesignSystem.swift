@@ -98,9 +98,16 @@ extension NSAppearance {
 
 extension NSColor {
     func resolvedColor(for appearance: NSAppearance? = nil) -> NSColor {
-        let appearance = appearance ?? NSAppearance.current ?? NSApp.effectiveAppearance
+        let resolvedAppearance: NSAppearance
+        if let appearance {
+            resolvedAppearance = appearance
+        } else if let appAppearance = NSApp?.effectiveAppearance {
+            resolvedAppearance = appAppearance
+        } else {
+            resolvedAppearance = NSAppearance.currentDrawing()
+        }
         var resolved = self
-        appearance.performAsCurrentDrawingAppearance {
+        resolvedAppearance.performAsCurrentDrawingAppearance {
             resolved = self.usingColorSpace(.deviceRGB) ?? self
         }
         return resolved
