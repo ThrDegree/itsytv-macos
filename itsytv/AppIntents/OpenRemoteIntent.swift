@@ -33,7 +33,7 @@ struct AppleTVDeviceQuery: EntityQuery {
         let allIDs = KeychainStorage.allPairedDeviceIDs()
         let macPattern = /^[0-9A-Fa-f]{2}(:[0-9A-Fa-f]{2}){5}$/
         let filtered = allIDs.filter { $0.wholeMatch(of: macPattern) == nil }
-        log.error("pairedDeviceEntities: allIDs=\(allIDs, privacy: .public) filtered=\(filtered, privacy: .public)")
+        log.debug("pairedDeviceEntities: allIDs=\(allIDs, privacy: .public) filtered=\(filtered, privacy: .public)")
         return filtered.map { AppleTVDeviceEntity(id: $0) }
     }
 }
@@ -48,12 +48,12 @@ struct OpenRemoteIntent: AppIntent {
 
     @MainActor
     func perform() async throws -> some IntentResult {
-        log.error("Intent perform() called, device=\(device.id)")
+        log.debug("Intent perform() called, device=\(device.id)")
 
         for i in 0..<20 {
             let delegate = AppDelegate.shared
             let controller = delegate?.appController
-            log.error("Attempt \(i): delegate=\(delegate == nil ? "nil" : "set") controller=\(controller == nil ? "nil" : "set")")
+            log.debug("Attempt \(i): delegate=\(delegate == nil ? "nil" : "set") controller=\(controller == nil ? "nil" : "set")")
 
             if let controller {
                 controller.openRemote(for: device.id)

@@ -1,10 +1,6 @@
 import SwiftUI
 
-/// An `NSTextField` wrapper that correctly handles IME composition (Korean, Japanese, Chinese, etc.).
-///
-/// During active IME composition the field editor holds a "marked" (underlined) range that represents
-/// in-progress input. This view reports only the **committed** portion of the text – everything
-/// outside that marked range – so callers never see intermediate composition states.
+/// NSTextField wrapper that reports only committed text, excluding in-progress IME composition ranges.
 struct ComposeAwareTextField: NSViewRepresentable {
     @Binding var text: String
     var placeholder: String = ""
@@ -86,8 +82,6 @@ struct ComposeAwareTextField: NSViewRepresentable {
 }
 
 private extension NSRange {
-    /// Convert an `NSRange` to a `Range<String.Index>` within the given string, returning `nil`
-    /// if the range is not found or represents no marked text.
     func toRange(in string: String) -> Range<String.Index>? {
         guard location != NSNotFound, length > 0 else { return nil }
         guard let start = string.utf16.index(string.utf16.startIndex, offsetBy: location, limitedBy: string.utf16.endIndex),

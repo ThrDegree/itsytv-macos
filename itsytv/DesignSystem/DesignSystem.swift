@@ -56,10 +56,6 @@ enum DS {
             }
         }
 
-        static var iconForeground: NSColor {
-            foreground
-        }
-
         static var remoteButton: NSColor {
             NSColor(name: nil) { appearance in
                 appearance.isDark ? NSColor(white: 0.27, alpha: 1) : NSColor(white: 0.205, alpha: 1)
@@ -76,25 +72,6 @@ enum DS {
             }
         }
 
-        static var promoGradientStart: NSColor {
-            NSColor(red: 0.30, green: 0.45, blue: 0.95, alpha: 1)
-        }
-
-        static var promoGradientEnd: NSColor {
-            NSColor(red: 0.65, green: 0.35, blue: 0.90, alpha: 1)
-        }
-
-    }
-
-    // MARK: - Spacing
-
-    enum Spacing {
-        static let xs: CGFloat = 4
-        static let sm: CGFloat = 8
-        static let md: CGFloat = 12
-        static let lg: CGFloat = 16
-        static let xl: CGFloat = 24
-        static let xxl: CGFloat = 32
     }
 
     // MARK: - Radius
@@ -107,20 +84,6 @@ enum DS {
         static let full: CGFloat = 9999
     }
 
-    // MARK: - Typography
-
-    enum Typography {
-        static let label = NSFont.systemFont(ofSize: 13, weight: .regular)
-        static let labelMedium = NSFont.systemFont(ofSize: 13, weight: .medium)
-    }
-
-    // MARK: - Control sizes
-
-    enum ControlSize {
-        static let iconMedium: CGFloat = 14
-        static let menuItemHeight: CGFloat = 28
-        static let menuItemWidth: CGFloat = 260
-    }
 }
 
 // MARK: - NSAppearance extension

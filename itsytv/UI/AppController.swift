@@ -38,6 +38,7 @@ final class PairingCache {
 }
 
 private let log = Logger(subsystem: "com.itsytv.app", category: "Panel")
+private let panelWidth: CGFloat = 176
 
 final class AppController: NSObject {
 
@@ -240,10 +241,8 @@ final class AppController: NSObject {
 
         let popover = NSPopover()
         popover.contentViewController = vc
-        // Set explicit initial size so NSPopover positions the arrow correctly on show().
-        // Without this, sizingOptions may not have reported a size yet, causing NSPopover
-        // to anchor from the wrong edge and land the arrow at the right side of the body.
-        popover.contentSize = NSSize(width: 176, height: 500)
+        // Required before show() — sizingOptions hasn't reported a size yet, so NSPopover would anchor from the wrong edge.
+        popover.contentSize = NSSize(width: panelWidth, height: 500)
         popover.behavior = .applicationDefined
         popover.animates = true
         popover.delegate = self
@@ -606,6 +605,6 @@ struct PanelContentView: View {
                 SetupView()
             }
         }
-        .frame(width: 176)
+        .frame(width: panelWidth)
     }
 }
