@@ -28,6 +28,9 @@ jobs:
       - name: Install XcodeGen
         run: brew install xcodegen
 
+      - name: Ensure optional local override file exists
+        run: touch project.local.yml
+
       - name: Generate Xcode project
         run: xcodegen generate
 
