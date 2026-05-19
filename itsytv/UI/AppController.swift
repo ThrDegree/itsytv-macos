@@ -50,6 +50,7 @@ final class AppController: NSObject {
     private var popover: NSPopover?
     private var panelDeviceID: String?
     private var keyboardMonitor: Any?
+    private var clickOutsideMonitor: Any?
 
     init(manager: AppleTVManager, iconLoader: AppIconLoader) {
         self.manager = manager
@@ -65,6 +66,7 @@ final class AppController: NSObject {
 
     func cleanup() {
         removeKeyboardMonitor()
+        removeClickOutsideMonitor()
         observation?.cancel()
         observation = nil
         HotkeyManager.shared.unregisterAll()
@@ -239,21 +241,32 @@ final class AppController: NSObject {
 
         let popover = NSPopover()
         popover.contentViewController = vc
-        popover.behavior = .semitransient
+        popover.behavior = .applicationDefined
         popover.animates = true
         popover.delegate = self
 
         guard let button = statusItem.button else { return }
         NSApp.activate(ignoringOtherApps: true)
-        popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
+        // Use an anchor rect as wide as the popover, centered on the button,
+        // so NSPopover places the arrow in the center of the popover body.
+        let popoverWidth: CGFloat = 176
+        let anchorRect = NSRect(
+            x: button.bounds.midX - popoverWidth / 2,
+            y: 0,
+            width: popoverWidth,
+            height: button.bounds.height
+        )
+        popover.show(relativeTo: anchorRect, of: button, preferredEdge: .minY)
 
         self.popover = popover
         self.panelDeviceID = manager.connectedDeviceID
         installKeyboardMonitor()
+        installClickOutsideMonitor()
     }
 
     private func dismissPanel() {
         removeKeyboardMonitor()
+        removeClickOutsideMonitor()
         popover?.close()
         panelDeviceID = nil
         // popover is nilled in popoverDidClose
@@ -272,6 +285,24 @@ final class AppController: NSObject {
         if let monitor = keyboardMonitor {
             NSEvent.removeMonitor(monitor)
             keyboardMonitor = nil
+        }
+    }
+
+    private func installClickOutsideMonitor() {
+        removeClickOutsideMonitor()
+        clickOutsideMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] _ in
+            guard let self, let popover = self.popover, popover.isShown else { return }
+            let loc = NSEvent.mouseLocation
+            if popover.contentViewController?.view.window?.frame.contains(loc) == false {
+                self.dismissPanel()
+            }
+        }
+    }
+
+    private func removeClickOutsideMonitor() {
+        if let monitor = clickOutsideMonitor {
+            NSEvent.removeMonitor(monitor)
+            clickOutsideMonitor = nil
         }
     }
 
