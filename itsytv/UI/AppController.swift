@@ -103,7 +103,7 @@ final class AppController: NSObject {
         HotkeyManager.shared.onHotkeyPressed = { [weak self] deviceID in
             guard let self else { return }
             if self.panel?.isVisible == true && self.panelDeviceID == deviceID {
-                self.manager.disconnect()
+                self.dismissPanel()
             } else {
                 self.openRemote(for: deviceID)
             }
@@ -171,11 +171,7 @@ final class AppController: NSObject {
 
     @objc private func statusItemClicked(_ sender: NSStatusBarButton) {
         if panel?.isVisible == true {
-            if manager.connectionStatus == .disconnected {
-                dismissPanel()
-            } else {
-                manager.disconnect()
-            }
+            dismissPanel()
             return
         }
 
@@ -379,11 +375,7 @@ final class AppController: NSObject {
             guard let self, let panel = self.panel, panel.isVisible else { return }
             let loc = NSEvent.mouseLocation
             if !panel.frame.contains(loc) {
-                if self.manager.connectionStatus == .disconnected {
-                    self.dismissPanel()
-                } else {
-                    self.manager.disconnect()
-                }
+                self.dismissPanel()
             }
         }
     }
@@ -403,7 +395,7 @@ final class AppController: NSObject {
         if event.modifierFlags.contains(.command) {
             switch event.keyCode {
             case 13, 4: // Cmd+W, Cmd+H
-                manager.disconnect()
+                dismissPanel()
                 return true
             case 40: // Cmd+K
                 manager.keyboardToggleCounter &+= 1

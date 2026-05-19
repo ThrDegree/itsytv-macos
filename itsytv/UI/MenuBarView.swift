@@ -11,6 +11,7 @@ struct RemoteControlView: View {
     @Environment(AppleTVManager.self) private var manager
     @Environment(PairingCache.self) private var pairingCache
     @Environment(\.switchDeviceAction) private var switchDeviceAction
+    @Environment(\.dismissAction) private var dismissAction
     @State private var selectedTab: RemoteTab = .remote
     @State private var showingKeyboard = false
     @State private var keyboardText = ""
@@ -37,9 +38,9 @@ struct RemoteControlView: View {
                     if let deviceID = manager.connectedDeviceID {
                         KeychainStorage.delete(for: deviceID)
                     }
-                    manager.disconnect()
+                    dismissAction?()
                 }
-                PanelCloseButton { manager.disconnect() }
+                PanelCloseButton { dismissAction?() }
             }
             .padding(.horizontal, 8)
             .padding(.top, 8)
@@ -54,7 +55,7 @@ struct RemoteControlView: View {
                         if let deviceID = manager.connectedDeviceID {
                             KeychainStorage.delete(for: deviceID)
                         }
-                        manager.disconnect()
+                        dismissAction?()
                     }
                     .font(.caption)
                     .foregroundStyle(.red)
@@ -962,6 +963,7 @@ private struct PowerButton: View {
 
 struct PairingView: View {
     @Environment(AppleTVManager.self) private var manager
+    @Environment(\.dismissAction) private var dismissAction
     @State private var digits: [Int?] = [nil, nil, nil, nil]
 
     private var currentIndex: Int {
@@ -976,7 +978,7 @@ struct PairingView: View {
                     .lineLimit(2)
                     .multilineTextAlignment(.leading)
                 Spacer()
-                PanelCloseButton { manager.disconnect() }
+                PanelCloseButton { dismissAction?() }
             }
             .padding(.horizontal, 8)
             .padding(.top, 8)
@@ -1096,7 +1098,7 @@ private final class PairingKeyNSView: NSView {
 }
 
 struct ErrorView: View {
-    @Environment(AppleTVManager.self) private var manager
+    @Environment(\.dismissAction) private var dismissAction
     let message: String
 
     var body: some View {
@@ -1108,7 +1110,7 @@ struct ErrorView: View {
                 .font(.subheadline)
                 .multilineTextAlignment(.center)
             Button("Dismiss") {
-                manager.disconnect()
+                dismissAction?()
             }
             .buttonStyle(.borderedProminent)
         }
