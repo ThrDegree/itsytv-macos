@@ -6,10 +6,14 @@ import os.log
 import ObjectiveC
 import ItsytvCore
 
-// MARK: - Environment key for device switching
+// MARK: - Environment keys
 
 private struct SwitchDeviceActionKey: EnvironmentKey {
     static let defaultValue: ((String) -> Void)? = nil
+}
+
+private struct DismissActionKey: EnvironmentKey {
+    static let defaultValue: (() -> Void)? = nil
 }
 
 extension EnvironmentValues {
@@ -17,11 +21,13 @@ extension EnvironmentValues {
         get { self[SwitchDeviceActionKey.self] }
         set { self[SwitchDeviceActionKey.self] = newValue }
     }
+    var dismissAction: (() -> Void)? {
+        get { self[DismissActionKey.self] }
+        set { self[DismissActionKey.self] = newValue }
+    }
 }
 
 // MARK: - Pairing cache
-// Caches paired device IDs so Keychain is only hit at quiet moments,
-// not during menuWillOpen or SwiftUI renders.
 
 @Observable
 final class PairingCache {
@@ -34,10 +40,9 @@ final class PairingCache {
 
 private let log = Logger(subsystem: "com.itsytv.app", category: "Panel")
 
-final class AppController: NSObject, NSMenuDelegate {
+final class AppController: NSObject {
 
     let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
-    let menu = NSMenu()
     private let manager: AppleTVManager
     private let iconLoader: AppIconLoader
     private let pairingCache = PairingCache()
@@ -54,7 +59,6 @@ final class AppController: NSObject, NSMenuDelegate {
         super.init()
         pairingCache.refresh()
         setupStatusItem()
-        rebuildMenu()
         startObserving()
         setupHotkeyHandler()
         manager.startScanning()
@@ -144,28 +148,24 @@ final class AppController: NSObject, NSMenuDelegate {
             button.target = self
             button.sendAction(on: [.leftMouseDown])
         }
-        menu.delegate = self
     }
 
     @objc private func statusItemClicked(_ sender: NSStatusBarButton) {
         if panel?.isVisible == true {
-            manager.disconnect()
+            if manager.connectionStatus == .disconnected {
+                dismissPanel()
+            } else {
+                manager.disconnect()
+            }
             return
         }
 
+        manager.refreshScanning()
         if !pairingCache.pairedIDs.isEmpty {
             openRemote()
         } else {
-            // No paired devices yet — show the full menu for first-time pairing.
-            showFullMenu()
+            showPanel()
         }
-    }
-
-    private func showFullMenu() {
-        rebuildMenu()
-        statusItem.menu = menu
-        statusItem.button?.performClick(nil)
-        statusItem.menu = nil
     }
 
     private func startObserving() {
@@ -199,92 +199,17 @@ final class AppController: NSObject, NSMenuDelegate {
         switch currentStatus {
         case .disconnected:
             pairingCache.refresh()
-            dismissPanel()
+            // Only dismiss if we transitioned away from a non-disconnected state
+            // (avoids closing SetupView when a new device is discovered).
+            if previousStatus != .disconnected {
+                dismissPanel()
+            }
         case .connected:
             if case .pairing = previousStatus { pairingCache.refresh() }
-            menu.cancelTracking()
             showPanel()
         default:
             break
         }
-    }
-
-    // MARK: - Menu building
-
-    private func rebuildMenu() {
-        menu.removeAllItems()
-        buildDeviceList()
-    }
-
-    private func buildDeviceList() {
-        if manager.discoveredDevices.isEmpty {
-            let scanning = NSMenuItem(title: "Scanning for devices...", action: nil, keyEquivalent: "")
-            scanning.isEnabled = false
-            menu.addItem(scanning)
-        } else {
-            let sorted = manager.discoveredDevices.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
-            for device in sorted {
-                let isPaired = pairingCache.pairedIDs.contains(device.id)
-                let item = createDeviceItem(device: device, isPaired: isPaired)
-                menu.addItem(item)
-            }
-        }
-    }
-
-    private func createDeviceItem(device: AppleTVDevice, isPaired: Bool) -> NSMenuItem {
-        let height = DS.ControlSize.menuItemHeight
-        let width = DS.ControlSize.menuItemWidth
-
-        let containerView = HighlightingMenuItemView(frame: NSRect(x: 0, y: 0, width: width, height: height))
-        containerView.closesMenuOnAction = isPaired
-
-        // Icon (green for paired devices)
-        let iconSize = DS.ControlSize.iconMedium
-        let iconY = (height - iconSize) / 2
-        let iconView = NSImageView(frame: NSRect(x: DS.Spacing.md, y: iconY, width: iconSize, height: iconSize))
-        iconView.image = NSImage(systemSymbolName: "appletv.fill", accessibilityDescription: nil)
-        iconView.contentTintColor = isPaired ? .systemGreen : DS.Colors.iconForeground
-        iconView.imageScaling = .scaleProportionallyUpOrDown
-        containerView.addSubview(iconView)
-
-        // Hotkey (right-aligned, for paired devices with assigned hotkey)
-        let rightPadding: CGFloat = 20
-        var labelRightEdge = width - rightPadding
-        if isPaired, let keys = HotkeyStorage.load(deviceID: device.id) {
-            let hotkeyFont = NSFont.menuFont(ofSize: 13)
-            let hotkeyStr = keys.displayString
-            let hotkeyAttr = NSAttributedString(string: hotkeyStr, attributes: [.font: hotkeyFont])
-            let hotkeyTextSize = hotkeyAttr.size()
-            let hotkeyW = ceil(hotkeyTextSize.width) + 4
-            let hotkeyX = width - rightPadding - hotkeyW
-            let hotkeyY = (height - hotkeyTextSize.height) / 2
-
-            let hotkeyLabel = NSTextField(labelWithString: hotkeyStr)
-            hotkeyLabel.frame = NSRect(x: hotkeyX, y: hotkeyY, width: hotkeyW, height: hotkeyTextSize.height)
-            hotkeyLabel.font = hotkeyFont
-            hotkeyLabel.textColor = .tertiaryLabelColor
-            containerView.addSubview(hotkeyLabel)
-            labelRightEdge = hotkeyX - DS.Spacing.sm
-        }
-
-        // Name label
-        let labelX = DS.Spacing.md + iconSize + DS.Spacing.sm
-        let labelY = (height - 17) / 2
-        let labelWidth = labelRightEdge - labelX
-        let nameLabel = NSTextField(labelWithString: device.name)
-        nameLabel.frame = NSRect(x: labelX, y: labelY, width: labelWidth, height: 17)
-        nameLabel.font = DS.Typography.label
-        nameLabel.textColor = DS.Colors.foreground
-        nameLabel.lineBreakMode = .byTruncatingTail
-        containerView.addSubview(nameLabel)
-
-        containerView.onAction = { [weak self] in
-            self?.openRemote(for: device.id)
-        }
-
-        let item = NSMenuItem(title: device.name, action: nil, keyEquivalent: "")
-        item.view = containerView
-        return item
     }
 
     // MARK: - Panel
@@ -300,6 +225,9 @@ final class AppController: NSObject, NSMenuDelegate {
             .environment(pairingCache)
             .environment(\.switchDeviceAction, { [weak self] deviceID in
                 self?.switchDevice(to: deviceID)
+            })
+            .environment(\.dismissAction, { [weak self] in
+                self?.dismissPanel()
             })
 
         let hostingView = ArrowCursorHostingView(rootView: panelContent)
@@ -432,7 +360,11 @@ final class AppController: NSObject, NSMenuDelegate {
             guard let self, let panel = self.panel, panel.isVisible else { return }
             let loc = NSEvent.mouseLocation
             if !panel.frame.contains(loc) {
-                self.manager.disconnect()
+                if self.manager.connectionStatus == .disconnected {
+                    self.dismissPanel()
+                } else {
+                    self.manager.disconnect()
+                }
             }
         }
     }
@@ -507,12 +439,6 @@ final class AppController: NSObject, NSMenuDelegate {
         return true
     }
 
-    // MARK: - NSMenuDelegate
-
-    func menuWillOpen(_ menu: NSMenu) {
-        manager.refreshScanning()
-        rebuildMenu()
-    }
 }
 
 // MARK: - Panel SwiftUI content
@@ -781,8 +707,8 @@ struct PanelContentView: View {
                 PairingView()
             case .error(let message):
                 ErrorView(message: message)
-            default:
-                EmptyView()
+            case .disconnected:
+                SetupView()
             }
         }
         .frame(width: 176)

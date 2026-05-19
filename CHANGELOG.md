@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.6.0
+
+- First-time setup: clicking the menu bar icon now opens a panel showing discovered Apple TVs with a "Pair" button, replacing the old dropdown menu
+- Clicking the menu bar icon while the panel is open now closes it (regardless of connection state)
+- Clicking outside the panel while in setup/disconnected state now dismisses it correctly
+- Fix: discovering a new Apple TV while the setup panel is open no longer closes the panel
+
 ## 1.5.4
 
 - Add AppleScript `play` and `pause` verbs so automation tools (Hammerspoon, Keyboard Maestro, Shortcuts, `osascript`) can control playback idempotently without resuming a quiet TV (thanks @aporzio1)

@@ -1116,6 +1116,81 @@ struct ErrorView: View {
     }
 }
 
+// MARK: - Setup view (first-time / no paired devices)
+
+struct SetupView: View {
+    @Environment(AppleTVManager.self) private var manager
+    @Environment(\.dismissAction) private var dismissAction
+
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack {
+                Text("Apple TV")
+                    .font(.subheadline.weight(.medium))
+                Spacer()
+                PanelCloseButton { dismissAction?() }
+            }
+            .padding(.horizontal, 8)
+            .padding(.top, 8)
+            .padding(.bottom, 12)
+
+            if manager.discoveredDevices.isEmpty {
+                Spacer()
+                VStack(spacing: 8) {
+                    ProgressView()
+                        .scaleEffect(0.75)
+                    Text("Scanning for Apple TVs...")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                Spacer()
+            } else {
+                VStack(spacing: 2) {
+                    ForEach(
+                        manager.discoveredDevices.sorted {
+                            $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending
+                        },
+                        id: \.id
+                    ) { device in
+                        SetupDeviceRow(device: device)
+                    }
+                }
+                .padding(.horizontal, 4)
+                Spacer()
+            }
+        }
+    }
+}
+
+private struct SetupDeviceRow: View {
+    @Environment(AppleTVManager.self) private var manager
+    let device: AppleTVDevice
+
+    var body: some View {
+        Button {
+            manager.connect(to: device)
+        } label: {
+            HStack(spacing: 8) {
+                Image(systemName: "appletv.fill")
+                    .font(.system(size: 13))
+                    .foregroundStyle(.secondary)
+                Text(device.name)
+                    .font(.subheadline)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                Spacer()
+                Text("Pair")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            .padding(.horizontal, 8)
+            .padding(.vertical, 6)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+    }
+}
+
 struct SettingsView: View {
     @Environment(AppleTVManager.self) private var manager
 
