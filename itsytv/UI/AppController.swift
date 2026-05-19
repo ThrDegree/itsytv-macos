@@ -1,7 +1,6 @@
 import AppKit
 import SwiftUI
 import Combine
-import ServiceManagement
 import os.log
 import ItsytvCore
 
@@ -39,19 +38,6 @@ final class PairingCache {
 
 private let log = Logger(subsystem: "com.itsytv.app", category: "Panel")
 private let panelWidth: CGFloat = 176
-
-func launchAtLoginBinding() -> Binding<Bool> {
-    Binding(
-        get: { SMAppService.mainApp.status == .enabled },
-        set: { newValue in
-            do {
-                try newValue ? SMAppService.mainApp.register() : SMAppService.mainApp.unregister()
-            } catch {
-                log.error("SMAppService \(newValue ? "register" : "unregister") failed: \(error)")
-            }
-        }
-    )
-}
 
 final class AppController: NSObject {
 
