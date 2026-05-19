@@ -12,10 +12,10 @@ jobs:
 
     steps:
       - name: Check out itsytv-macos
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Check out ItsytvCore
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           repository: nickustinov/itsytv-core
           path: itsytv-core
