@@ -1,0 +1,52 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  build-and-test:
+    runs-on: macos-15
+
+    steps:
+      - name: Check out itsytv-macos
+        uses: actions/checkout@v4
+
+      - name: Check out ItsytvCore
+        uses: actions/checkout@v4
+        with:
+          repository: nickustinov/itsytv-core
+          path: itsytv-core
+
+      - name: Expose ItsytvCore at expected sibling path
+        # project.yml references ../itsytv-core; actions/checkout can't write outside
+        # $GITHUB_WORKSPACE so we check out inside and symlink to the sibling location.
+        run: ln -s "$GITHUB_WORKSPACE/itsytv-core" "$GITHUB_WORKSPACE/../itsytv-core"
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Generate Xcode project
+        run: xcodegen generate
+
+      - name: Build
+        run: |
+          xcodebuild \
+            -scheme itsytv \
+            -destination "platform=macOS" \
+            build \
+            CODE_SIGN_IDENTITY="-" \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGNING_ALLOWED=NO
+
+      - name: Test
+        run: |
+          xcodebuild \
+            -scheme itsytv \
+            -destination "platform=macOS" \
+            test \
+            CODE_SIGN_IDENTITY="-" \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGNING_ALLOWED=NO

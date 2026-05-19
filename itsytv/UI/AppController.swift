@@ -1,6 +1,5 @@
 import AppKit
 import SwiftUI
-import Combine
 import os.log
 import ItsytvCore
 
@@ -45,7 +44,6 @@ final class AppController: NSObject {
     private let manager: AppleTVManager
     private let iconLoader: AppIconLoader
     private let pairingCache = PairingCache()
-    private var observation: AnyCancellable?
     private var popover: NSPopover?
     private var panelDeviceID: String?
     private var keyboardMonitor: Any?
@@ -70,8 +68,6 @@ final class AppController: NSObject {
         let nc = NSWorkspace.shared.notificationCenter
         sleepObservers.forEach { nc.removeObserver($0) }
         sleepObservers = []
-        observation?.cancel()
-        observation = nil
         HotkeyManager.shared.unregisterAll()
         popover?.close()
         popover = nil
@@ -175,11 +171,19 @@ final class AppController: NSObject {
     }
 
     private func startObserving() {
-        observation = Timer.publish(every: 0.3, on: .main, in: .common)
-            .autoconnect()
-            .sink { [weak self] _ in
+        observeManagerState()
+    }
+
+    private func observeManagerState() {
+        withObservationTracking {
+            _ = manager.connectionStatus
+            _ = manager.discoveredDevices.count
+        } onChange: { [weak self] in
+            DispatchQueue.main.async {
                 self?.handleStateChange()
+                self?.observeManagerState()
             }
+        }
     }
 
     private var lastKnownStatus: ConnectionStatus = .disconnected
