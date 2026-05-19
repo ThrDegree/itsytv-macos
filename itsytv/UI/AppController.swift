@@ -234,6 +234,12 @@ final class AppController: NSObject {
             return
         }
 
+        let bodyHeight: CGFloat = 400
+        let arrowHeight: CGFloat = 8
+        let arrowHalfWidth: CGFloat = 9
+        let panelWidth: CGFloat = 176
+        let totalHeight = bodyHeight + arrowHeight
+
         let panelContent = PanelContentView()
             .environment(manager)
             .environment(iconLoader)
@@ -244,18 +250,16 @@ final class AppController: NSObject {
             .environment(\.dismissAction, { [weak self] in
                 self?.dismissPanel()
             })
+            .padding(.top, arrowHeight)  // leave room for the callout arrow
 
         let hostingView = ArrowCursorHostingView(rootView: panelContent)
         hostingView.safeAreaRegions = []
         hostingView.translatesAutoresizingMaskIntoConstraints = false
 
-        // Vibrancy view as the contentView itself
-        let vibrancy = NSVisualEffectView(frame: NSRect(x: 0, y: 0, width: 176, height: 400))
+        let vibrancy = NSVisualEffectView(frame: NSRect(x: 0, y: 0, width: panelWidth, height: totalHeight))
         vibrancy.material = .menu
         vibrancy.state = .active
         vibrancy.wantsLayer = true
-        vibrancy.layer?.cornerRadius = 10
-        vibrancy.layer?.masksToBounds = true
         vibrancy.addSubview(hostingView)
 
         NSLayoutConstraint.activate([
@@ -266,7 +270,7 @@ final class AppController: NSObject {
         ])
 
         let panel = KeyablePanel(
-            contentRect: NSRect(x: 0, y: 0, width: 176, height: 400),
+            contentRect: NSRect(x: 0, y: 0, width: panelWidth, height: totalHeight),
             styleMask: [.nonactivatingPanel],
             backing: .buffered,
             defer: false
@@ -294,19 +298,30 @@ final class AppController: NSObject {
         // Position after makeKeyAndOrderFront — AppKit constrains the
         // frame during ordering for .statusBar level panels, so we must
         // set the origin after the window is on screen.
+        var arrowX: CGFloat = panelWidth / 2  // fallback: centred
         if let statusButtonFrame = statusItemButtonFrameInScreen() {
-            let x = statusButtonFrame.midX - (panel.frame.width / 2)
-            let y = statusButtonFrame.minY - panel.frame.height
+            let x = statusButtonFrame.midX - (panelWidth / 2)
+            let y = statusButtonFrame.minY - totalHeight
             log.info("showPanel: anchoring to status item at (\(x), \(y))")
             panel.setFrameOrigin(NSPoint(x: x, y: y))
+            // Recalculate after AppKit may have clamped to screen edges
+            arrowX = statusButtonFrame.midX - panel.frame.minX
         } else if let screen = NSScreen.main?.visibleFrame {
-            let x = screen.midX - (panel.frame.width / 2)
-            let y = screen.maxY - panel.frame.height - 8
+            let x = screen.midX - (panelWidth / 2)
+            let y = screen.maxY - totalHeight - 8
             log.warning("showPanel: missing status item frame, using screen fallback (\(x), \(y))")
             panel.setFrameOrigin(NSPoint(x: x, y: y))
         } else {
             log.warning("showPanel: missing status item and screen frames")
         }
+
+        // Apply callout mask now that the panel's screen position is final
+        vibrancy.layer?.mask = makeCalloutMask(
+            size: vibrancy.bounds.size,
+            arrowX: arrowX,
+            arrowHeight: arrowHeight,
+            arrowHalfWidth: arrowHalfWidth
+        )
 
         self.panel = panel
         self.panelDeviceID = manager.connectedDeviceID
@@ -346,6 +361,34 @@ final class AppController: NSObject {
         panel?.close()
         panel = nil
         panelDeviceID = nil
+    }
+
+    private func makeCalloutMask(size: CGSize, arrowX: CGFloat, arrowHeight: CGFloat, arrowHalfWidth: CGFloat) -> CAShapeLayer {
+        let r: CGFloat = 10
+        let w = size.width
+        let h = size.height
+        // NSVisualEffectView layer: y=0 at bottom, y=h at top (menu bar side)
+        let bodyTop = h - arrowHeight
+        let ax = max(r + arrowHalfWidth, min(w - r - arrowHalfWidth, arrowX))
+
+        let path = CGMutablePath()
+        path.move(to: CGPoint(x: ax, y: h))                          // arrow tip (top)
+        path.addLine(to: CGPoint(x: ax + arrowHalfWidth, y: bodyTop)) // arrow right base
+        path.addArc(tangent1End: CGPoint(x: w, y: bodyTop),
+                    tangent2End: CGPoint(x: w, y: 0), radius: r)      // top-right corner
+        path.addArc(tangent1End: CGPoint(x: w, y: 0),
+                    tangent2End: CGPoint(x: 0, y: 0), radius: r)      // bottom-right corner
+        path.addArc(tangent1End: CGPoint(x: 0, y: 0),
+                    tangent2End: CGPoint(x: 0, y: bodyTop), radius: r) // bottom-left corner
+        path.addArc(tangent1End: CGPoint(x: 0, y: bodyTop),
+                    tangent2End: CGPoint(x: w, y: bodyTop), radius: r) // top-left corner
+        path.addLine(to: CGPoint(x: ax - arrowHalfWidth, y: bodyTop)) // arrow left base
+        path.closeSubpath()                                            // back to tip
+
+        let layer = CAShapeLayer()
+        layer.frame = CGRect(origin: .zero, size: size)
+        layer.path = path
+        return layer
     }
 
     private func statusItemButtonFrameInScreen() -> NSRect? {
