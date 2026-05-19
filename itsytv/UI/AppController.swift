@@ -254,6 +254,7 @@ final class AppController: NSObject {
 
         let hostingView = ArrowCursorHostingView(rootView: panelContent)
         hostingView.safeAreaRegions = []
+        hostingView.sizingOptions = []  // prevent NSHostingView from auto-resizing the panel
         hostingView.translatesAutoresizingMaskIntoConstraints = false
 
         let vibrancy = NSVisualEffectView(frame: NSRect(x: 0, y: 0, width: panelWidth, height: totalHeight))
@@ -301,7 +302,7 @@ final class AppController: NSObject {
         var arrowX: CGFloat = panelWidth / 2  // fallback: centred
         if let statusButtonFrame = statusItemButtonFrameInScreen() {
             let x = statusButtonFrame.midX - (panelWidth / 2)
-            let y = statusButtonFrame.minY - totalHeight
+            let y = statusButtonFrame.minY - panel.frame.height
             log.info("showPanel: anchoring to status item at (\(x), \(y))")
             panel.setFrameOrigin(NSPoint(x: x, y: y))
             // Recalculate after AppKit may have clamped to screen edges
