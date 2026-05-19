@@ -254,7 +254,6 @@ final class AppController: NSObject {
 
         let hostingView = ArrowCursorHostingView(rootView: panelContent)
         hostingView.safeAreaRegions = []
-        hostingView.sizingOptions = []  // prevent NSHostingView from auto-resizing the panel
         hostingView.translatesAutoresizingMaskIntoConstraints = false
 
         let vibrancy = NSVisualEffectView(frame: NSRect(x: 0, y: 0, width: panelWidth, height: totalHeight))
