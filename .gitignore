@@ -39,3 +39,6 @@ dist/
 
 # Research notes
 itsytv.md
+
+# Local signing config (contains personal DEVELOPMENT_TEAM)
+project.local.yml
