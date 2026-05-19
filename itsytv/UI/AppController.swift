@@ -40,6 +40,19 @@ final class PairingCache {
 private let log = Logger(subsystem: "com.itsytv.app", category: "Panel")
 private let panelWidth: CGFloat = 176
 
+func launchAtLoginBinding() -> Binding<Bool> {
+    Binding(
+        get: { SMAppService.mainApp.status == .enabled },
+        set: { newValue in
+            do {
+                try newValue ? SMAppService.mainApp.register() : SMAppService.mainApp.unregister()
+            } catch {
+                log.error("SMAppService \(newValue ? "register" : "unregister") failed: \(error)")
+            }
+        }
+    )
+}
+
 final class AppController: NSObject {
 
     let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
@@ -51,6 +64,7 @@ final class AppController: NSObject {
     private var panelDeviceID: String?
     private var keyboardMonitor: Any?
     private var clickOutsideMonitor: Any?
+    private var sleepObservers: [Any] = []
 
     init(manager: AppleTVManager, iconLoader: AppIconLoader) {
         self.manager = manager
@@ -67,6 +81,9 @@ final class AppController: NSObject {
     func cleanup() {
         removeKeyboardMonitor()
         removeClickOutsideMonitor()
+        let nc = NSWorkspace.shared.notificationCenter
+        sleepObservers.forEach { nc.removeObserver($0) }
+        sleepObservers = []
         observation?.cancel()
         observation = nil
         HotkeyManager.shared.unregisterAll()
@@ -77,20 +94,14 @@ final class AppController: NSObject {
 
     private func setupSleepWakeObserver() {
         let nc = NSWorkspace.shared.notificationCenter
-        nc.addObserver(
-            forName: NSWorkspace.willSleepNotification,
-            object: nil,
-            queue: .main
-        ) { [weak self] _ in
-            self?.manager.disconnect()
-        }
-        nc.addObserver(
-            forName: NSWorkspace.didWakeNotification,
-            object: nil,
-            queue: .main
-        ) { [weak self] _ in
-            self?.manager.startScanning()
-        }
+        sleepObservers = [
+            nc.addObserver(forName: NSWorkspace.willSleepNotification, object: nil, queue: .main) { [weak self] _ in
+                self?.manager.disconnect()
+            },
+            nc.addObserver(forName: NSWorkspace.didWakeNotification, object: nil, queue: .main) { [weak self] _ in
+                self?.manager.startScanning()
+            },
+        ]
     }
 
     private func setupHotkeyHandler() {
@@ -401,7 +412,7 @@ struct PanelMenuButton: View {
             Divider()
             Button("Unpair", role: .destructive, action: onUnpair)
             Divider()
-            Toggle("Launch at login", isOn: launchAtLoginBinding)
+            Toggle("Launch at login", isOn: launchAtLoginBinding())
             #if !APPSTORE
             Button("Check for updates...") { UpdateChecker.check() }
             #endif
@@ -439,14 +450,7 @@ struct PanelMenuButton: View {
         return "Assign hotkey..."
     }
 
-    private var launchAtLoginBinding: Binding<Bool> {
-        Binding(
-            get: { SMAppService.mainApp.status == .enabled },
-            set: { newValue in
-                try? newValue ? SMAppService.mainApp.register() : SMAppService.mainApp.unregister()
-            }
-        )
-    }
+
 }
 
 struct ShortcutRecorderView: View {

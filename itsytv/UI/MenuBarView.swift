@@ -1,6 +1,5 @@
 import SwiftUI
 import Combine
-import ServiceManagement
 import ItsytvCore
 
 enum RemoteTab: String, CaseIterable {
@@ -1208,10 +1207,7 @@ struct SettingsView: View {
                 }
             }
             Section("General") {
-                Toggle("Launch at login", isOn: Binding(
-                    get: { SMAppService.mainApp.status == .enabled },
-                    set: { newValue in try? newValue ? SMAppService.mainApp.register() : SMAppService.mainApp.unregister() }
-                ))
+                Toggle("Launch at login", isOn: launchAtLoginBinding())
             }
         }
         .formStyle(.grouped)
