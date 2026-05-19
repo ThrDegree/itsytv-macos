@@ -1,5 +1,6 @@
 import SwiftUI
 import Combine
+import ServiceManagement
 import ItsytvCore
 
 enum RemoteTab: String, CaseIterable {
@@ -377,7 +378,6 @@ struct NowPlayingProgress: View {
                 }
                 .frame(height: 12)
                 .contentShape(Rectangle())
-                .background(WindowDragBlocker())
                 .gesture(
                     DragGesture(minimumDistance: 0)
                         .onChanged { value in
@@ -479,15 +479,6 @@ struct RemoteTabContent: View {
                             guard action == .click else { return }
                             manager.toggleMute()
                         }
-                        // TODO: Keyboard button – decide on placement
-                        // RemoteCircleButton(imageName: "btnKeyboard", button: .siri, shortcut: "⌘K", size: buttonSize) { action in
-                        //     guard action == .click else { return }
-                        //     showingKeyboard.toggle()
-                        //     if !showingKeyboard {
-                        //         keyboardText = ""
-                        //         manager.resetTextInputState()
-                        //     }
-                        // }
                     }
 
                     VolumePill(
@@ -597,7 +588,6 @@ struct AppGridView: View {
                                     onReorder: { manager.saveAppOrder($0.map(\.bundleID)) }
                                 )
                             )
-                            .background(WindowDragBlocker())
                     }
                 }
                 .padding(.horizontal, 16)
@@ -1218,7 +1208,10 @@ struct SettingsView: View {
                 }
             }
             Section("General") {
-                Toggle("Launch at login", isOn: .constant(false))
+                Toggle("Launch at login", isOn: Binding(
+                    get: { SMAppService.mainApp.status == .enabled },
+                    set: { newValue in try? newValue ? SMAppService.mainApp.register() : SMAppService.mainApp.unregister() }
+                ))
             }
         }
         .formStyle(.grouped)
@@ -1226,19 +1219,3 @@ struct SettingsView: View {
     }
 }
 
-/// Prevents `isMovableByWindowBackground` from intercepting drags on this view.
-/// Place as a `.background()` on any interactive area that needs to handle its own drag gestures.
-struct WindowDragBlocker: NSViewRepresentable {
-    func makeNSView(context: Context) -> NSView {
-        let view = NonDraggableView()
-        view.setContentHuggingPriority(.defaultLow, for: .horizontal)
-        view.setContentHuggingPriority(.defaultLow, for: .vertical)
-        return view
-    }
-
-    func updateNSView(_ nsView: NSView, context: Context) {}
-}
-
-private final class NonDraggableView: NSView {
-    override var mouseDownCanMoveWindow: Bool { false }
-}

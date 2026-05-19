@@ -3,7 +3,6 @@ import SwiftUI
 import Combine
 import ServiceManagement
 import os.log
-import ObjectiveC
 import ItsytvCore
 
 // MARK: - Environment keys
@@ -120,17 +119,17 @@ final class AppController: NSObject {
             }
         }
         let discoveredCount = manager.discoveredDevices.count
-        log.error("openRemote: targetID=\(targetID ?? "nil", privacy: .public) discoveredCount=\(discoveredCount, privacy: .public)")
+        log.debug("openRemote: targetID=\(targetID ?? "nil", privacy: .public) discoveredCount=\(discoveredCount, privacy: .public)")
         guard let targetID else {
-            log.error("openRemote: no targetID, returning")
+            log.debug("openRemote: no targetID, returning")
             return
         }
 
         if let device = manager.discoveredDevices.first(where: { $0.id == targetID }) {
-            log.error("openRemote: device found, connecting")
+            log.debug("openRemote: device found, connecting")
             connectAndShow(device)
         } else {
-            log.error("openRemote: device not discovered yet, setting pendingOpenDeviceID")
+            log.debug("openRemote: device not discovered yet, setting pendingOpenDeviceID")
             pendingOpenDeviceID = targetID
         }
     }
