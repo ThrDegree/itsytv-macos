@@ -61,6 +61,7 @@ final class AppController: NSObject {
         setupStatusItem()
         startObserving()
         setupHotkeyHandler()
+        setupSleepWakeObserver()
         manager.startScanning()
     }
 
@@ -77,6 +78,24 @@ final class AppController: NSObject {
         panel?.close()
         panel = nil
         panelDeviceID = nil
+    }
+
+    private func setupSleepWakeObserver() {
+        let nc = NSWorkspace.shared.notificationCenter
+        nc.addObserver(
+            forName: NSWorkspace.willSleepNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            self?.manager.disconnect()
+        }
+        nc.addObserver(
+            forName: NSWorkspace.didWakeNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            self?.manager.startScanning()
+        }
     }
 
     private func setupHotkeyHandler() {
