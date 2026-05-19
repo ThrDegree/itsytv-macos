@@ -47,7 +47,7 @@ final class AppController: NSObject {
     private let iconLoader: AppIconLoader
     private let pairingCache = PairingCache()
     private var observation: AnyCancellable?
-    private var panel: NSPanel?
+    private var popover: NSPopover?
     private var panelDeviceID: String?
     private var keyboardMonitor: Any?
     private var clickOutsideMonitor: Any?
@@ -70,8 +70,8 @@ final class AppController: NSObject {
         observation?.cancel()
         observation = nil
         HotkeyManager.shared.unregisterAll()
-        panel?.close()
-        panel = nil
+        popover?.close()
+        popover = nil
         panelDeviceID = nil
     }
 
@@ -97,7 +97,7 @@ final class AppController: NSObject {
         HotkeyManager.shared.reregisterAll()
         HotkeyManager.shared.onHotkeyPressed = { [weak self] deviceID in
             guard let self else { return }
-            if self.panel?.isVisible == true && self.panelDeviceID == deviceID {
+            if self.popover?.isShown == true && self.panelDeviceID == deviceID {
                 self.dismissPanel()
             } else {
                 self.openRemote(for: deviceID)
@@ -164,7 +164,7 @@ final class AppController: NSObject {
     }
 
     @objc private func statusItemClicked(_ sender: NSStatusBarButton) {
-        if panel?.isVisible == true {
+        if popover?.isShown == true {
             dismissPanel()
             return
         }
@@ -218,17 +218,12 @@ final class AppController: NSObject {
         }
     }
 
-    // MARK: - Panel
+    // MARK: - Popover
 
     private func showPanel() {
-        if panel != nil { return }
+        if popover != nil { return }
 
-        let arrowHeight: CGFloat = 12
-        let arrowHalfWidth: CGFloat = 10
-        let gap: CGFloat = 4          // space between menu bar bottom and arrow tip
-        let panelWidth: CGFloat = 176
-
-        let panelContent = PanelContentView()
+        let content = PanelContentView()
             .environment(manager)
             .environment(iconLoader)
             .environment(pairingCache)
@@ -238,67 +233,27 @@ final class AppController: NSObject {
             .environment(\.dismissAction, { [weak self] in
                 self?.dismissPanel()
             })
-            .padding(.top, arrowHeight)
 
-        let hostingView = ArrowCursorHostingView(rootView: panelContent)
-        hostingView.safeAreaRegions = []
-        hostingView.translatesAutoresizingMaskIntoConstraints = false
+        let vc = NSViewController()
+        let hostingView = NSHostingView(rootView: content)
+        hostingView.sizingOptions = .preferredContentSize
+        vc.view = hostingView
 
-        let vibrancy = NSVisualEffectView(frame: NSRect(x: 0, y: 0, width: panelWidth, height: 400))
-        vibrancy.material = .popover
-        vibrancy.state = .active
-        vibrancy.wantsLayer = true
-        vibrancy.addSubview(hostingView)
+        let popover = NSPopover()
+        popover.contentViewController = vc
+        // Set explicit initial size so NSPopover positions the arrow correctly on show().
+        // Without this, sizingOptions may not have reported a size yet, causing NSPopover
+        // to anchor from the wrong edge and land the arrow at the right side of the body.
+        popover.contentSize = NSSize(width: 176, height: 500)
+        popover.behavior = .applicationDefined
+        popover.animates = true
+        popover.delegate = self
 
-        NSLayoutConstraint.activate([
-            hostingView.topAnchor.constraint(equalTo: vibrancy.topAnchor),
-            hostingView.bottomAnchor.constraint(equalTo: vibrancy.bottomAnchor),
-            hostingView.leadingAnchor.constraint(equalTo: vibrancy.leadingAnchor),
-            hostingView.trailingAnchor.constraint(equalTo: vibrancy.trailingAnchor),
-        ])
-
-        let panel = KeyablePanel(
-            contentRect: NSRect(x: 0, y: 0, width: panelWidth, height: 400),
-            styleMask: [.nonactivatingPanel],
-            backing: .buffered,
-            defer: false
-        )
-        panel.contentView = vibrancy
-        panel.level = .statusBar
-        panel.hidesOnDeactivate = false
-        panel.collectionBehavior = [.fullScreenAuxiliary]
-        panel.isOpaque = false
-        panel.backgroundColor = .clear
-        panel.isReleasedWhenClosed = false
-        panel.delegate = self
-        panel.hasShadow = true
-
+        guard let button = statusItem.button else { return }
         NSApp.activate(ignoringOtherApps: true)
-        panel.makeKeyAndOrderFront(nil)
+        popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
 
-        // Position after makeKeyAndOrderFront — NSHostingView auto-sizes the
-        // panel during ordering, so panel.frame.height reflects the true height.
-        var arrowX: CGFloat = panelWidth / 2
-        if let statusButtonFrame = statusItemButtonFrameInScreen() {
-            let x = statusButtonFrame.midX - (panelWidth / 2)
-            let y = statusButtonFrame.minY - panel.frame.height - gap
-            panel.setFrameOrigin(NSPoint(x: x, y: y))
-            // Recalculate after AppKit may have clamped to screen edges
-            arrowX = statusButtonFrame.midX - panel.frame.minX
-        } else if let screen = NSScreen.main?.visibleFrame {
-            let x = screen.midX - (panelWidth / 2)
-            let y = screen.maxY - panel.frame.height - gap
-            panel.setFrameOrigin(NSPoint(x: x, y: y))
-        }
-
-        vibrancy.layer?.mask = makeCalloutMask(
-            size: vibrancy.bounds.size,
-            arrowX: arrowX,
-            arrowHeight: arrowHeight,
-            arrowHalfWidth: arrowHalfWidth
-        )
-
-        self.panel = panel
+        self.popover = popover
         self.panelDeviceID = manager.connectedDeviceID
         installKeyboardMonitor()
         installClickOutsideMonitor()
@@ -307,48 +262,15 @@ final class AppController: NSObject {
     private func dismissPanel() {
         removeKeyboardMonitor()
         removeClickOutsideMonitor()
-        panel?.close()
-        panel = nil
+        popover?.close()
         panelDeviceID = nil
-    }
-
-    private func makeCalloutMask(size: CGSize, arrowX: CGFloat, arrowHeight: CGFloat, arrowHalfWidth: CGFloat) -> CAShapeLayer {
-        let r: CGFloat = 10
-        let w = size.width
-        let h = size.height
-        // NSVisualEffectView layer: y=0 at bottom, y=h at top (menu bar side)
-        let bodyTop = h - arrowHeight
-        let ax = max(r + arrowHalfWidth, min(w - r - arrowHalfWidth, arrowX))
-
-        let path = CGMutablePath()
-        path.move(to: CGPoint(x: ax, y: h))                           // arrow tip (top)
-        path.addLine(to: CGPoint(x: ax + arrowHalfWidth, y: bodyTop)) // arrow right base
-        path.addArc(tangent1End: CGPoint(x: w, y: bodyTop),
-                    tangent2End: CGPoint(x: w, y: 0), radius: r)       // top-right corner
-        path.addArc(tangent1End: CGPoint(x: w, y: 0),
-                    tangent2End: CGPoint(x: 0, y: 0), radius: r)       // bottom-right corner
-        path.addArc(tangent1End: CGPoint(x: 0, y: 0),
-                    tangent2End: CGPoint(x: 0, y: bodyTop), radius: r) // bottom-left corner
-        path.addArc(tangent1End: CGPoint(x: 0, y: bodyTop),
-                    tangent2End: CGPoint(x: w, y: bodyTop), radius: r) // top-left corner
-        path.addLine(to: CGPoint(x: ax - arrowHalfWidth, y: bodyTop)) // arrow left base
-        path.closeSubpath()                                            // back to tip
-
-        let layer = CAShapeLayer()
-        layer.frame = CGRect(origin: .zero, size: size)
-        layer.path = path
-        return layer
-    }
-
-    private func statusItemButtonFrameInScreen() -> NSRect? {
-        guard let button = statusItem.button, let window = button.window else { return nil }
-        return window.convertToScreen(button.convert(button.bounds, to: nil))
+        // popover is nilled in popoverDidClose
     }
 
     private func installKeyboardMonitor() {
         removeKeyboardMonitor()
         keyboardMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
-            guard let self, self.panel?.isVisible == true else { return event }
+            guard let self, self.popover?.isShown == true else { return event }
             if self.handleRemoteKeyDown(event) { return nil }
             return event
         }
@@ -364,9 +286,9 @@ final class AppController: NSObject {
     private func installClickOutsideMonitor() {
         removeClickOutsideMonitor()
         clickOutsideMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] _ in
-            guard let self, let panel = self.panel, panel.isVisible else { return }
+            guard let self, let popover = self.popover, popover.isShown else { return }
             let loc = NSEvent.mouseLocation
-            if !panel.frame.contains(loc) {
+            if popover.contentViewController?.view.window?.frame.contains(loc) == false {
                 self.dismissPanel()
             }
         }
@@ -411,7 +333,8 @@ final class AppController: NSObject {
             }
         }
 
-        if let responder = panel?.firstResponder {
+        let window = popover?.contentViewController?.view.window
+        if let responder = window?.firstResponder {
             var r: NSResponder? = responder
             while let current = r {
                 if current is NSText || current is NSTextField { return false }
@@ -440,36 +363,21 @@ final class AppController: NSObject {
 
 }
 
-// MARK: - NSWindowDelegate
+// MARK: - NSPopoverDelegate
 
-extension AppController: NSWindowDelegate {
-    func windowWillClose(_ notification: Notification) {
-        if (notification.object as? NSPanel) === panel {
-            if manager.connectionStatus != .disconnected {
-                manager.disconnect()
-            }
-            panel = nil
-            panelDeviceID = nil
+extension AppController: NSPopoverDelegate {
+    func popoverDidClose(_ notification: Notification) {
+        removeKeyboardMonitor()
+        removeClickOutsideMonitor()
+        if manager.connectionStatus != .disconnected {
+            manager.disconnect()
         }
+        popover = nil
+        panelDeviceID = nil
     }
 }
 
 // MARK: - Panel SwiftUI content
-
-private final class KeyablePanel: NSPanel {
-    override var canBecomeKey: Bool { true }
-}
-
-private final class ArrowCursorHostingView<Content: View>: NSHostingView<Content> {
-    override func resetCursorRects() {
-        discardCursorRects()
-        addCursorRect(bounds, cursor: .arrow)
-    }
-
-    override func addCursorRect(_ rect: NSRect, cursor: NSCursor) {
-        super.addCursorRect(rect, cursor: .arrow)
-    }
-}
 
 struct PanelMenuButton: View {
     let deviceID: String
