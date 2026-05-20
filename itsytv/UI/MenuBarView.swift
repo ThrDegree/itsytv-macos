@@ -259,9 +259,10 @@ struct NowPlayingBar: View {
         VStack(spacing: 6) {
             // Artwork — full width, natural aspect ratio
             if let data = np?.artworkData, let image = NSImage(data: data) {
+                let ratio = image.size.height > 0 ? image.size.width / image.size.height : 1.0
                 Image(nsImage: image)
                     .resizable()
-                    .aspectRatio(contentMode: .fit)
+                    .aspectRatio(ratio, contentMode: .fit)
                     .frame(maxWidth: .infinity)
                     .cornerRadius(6)
             } else {
