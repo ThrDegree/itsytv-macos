@@ -22,6 +22,10 @@ enum UpdateChecker {
                     showAlert(message: "Failed to check for updates: \(error.localizedDescription)")
                     return
                 }
+                if let http = response as? HTTPURLResponse, http.statusCode != 200 {
+                    showAlert(message: "Failed to check for updates: server returned \(http.statusCode).")
+                    return
+                }
                 guard let data else {
                     showAlert(message: "Failed to check for updates: no data received.")
                     return

@@ -459,7 +459,9 @@ struct NowPlayingProgress: View {
             }
 
             // Fall back to local progression if server snapshots are stale.
-            if pendingSeekTarget == nil && liveDuration > 0 && (isPlaying || currentTime > 0) {
+            // Only advance when actually playing — currentTime > 0 alone is not
+            // sufficient because paused/buffering content has non-zero position.
+            if pendingSeekTarget == nil && liveDuration > 0 && isPlaying {
                 currentTime = min(liveDuration, currentTime + 1)
             }
         }

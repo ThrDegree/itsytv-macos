@@ -30,7 +30,7 @@ Itsytv is now available on iOS with the same core experience plus features desig
 
 ## Features
 
-- **Menu bar remote** – control your Apple TV from a compact floating panel
+- **Menu bar remote** – control your Apple TV from a compact menu bar panel
 - **D-pad and buttons** – circular d-pad with directional navigation, select, home, menu/back, play/pause
 - **Keyboard navigation** – arrow keys, Return, Backspace, Escape, Space mapped to remote buttons
 - **Text input** – type directly into Apple TV text fields with a live keyboard
@@ -38,7 +38,6 @@ Itsytv is now available on iOS with the same core experience plus features desig
 - **App launcher** – grid of installed apps with icons fetched from the App Store; drag to reorder
 - **Multiple devices** – pair and switch between multiple Apple TVs
 - **Global hotkeys** – assign keyboard shortcuts to instantly open the remote for specific Apple TVs
-- **Per-device panel position** – remembers where you placed the remote for each Apple TV
 - **Launch at login** – optional auto-start from the menu bar
 - **Unpair** – remove pairing credentials from the panel menu
 
@@ -87,19 +86,20 @@ This app is a thin macOS UI layer on top of [itsytv-core](https://github.com/nic
 itsytv-macos/
 ├── itsytvApp.swift              # App entry point
 ├── UI/
-│   ├── AppController.swift      # NSStatusItem, menu, floating panel, keyboard monitor
+│   ├── AppController.swift      # NSStatusItem, NSPopover panel, keyboard monitor
 │   ├── MenuBarView.swift        # SwiftUI views: remote, now playing, app grid
 │   └── AppIconLoader.swift      # App icons from iTunes Lookup API
 ├── DesignSystem/
-│   ├── DesignSystem.swift       # Colours, typography, spacing, sizing tokens
-│   └── HighlightingMenuItemView.swift
+│   └── DesignSystem.swift       # Color and corner radius tokens
 ├── AppIntents/
 │   └── OpenRemoteIntent.swift   # Shortcuts action to open the remote for a specific Apple TV
-├── MRP/
-│   └── Proto/                   # Protobuf definitions (.proto files)
 └── Utilities/
-    ├── UpdateChecker.swift      # GitHub release checker
-    └── HotkeyManager.swift      # Global hotkey registration
+    ├── PlaybackMath.swift        # seekProgress, formatPlaybackTime
+    ├── HotkeyManager.swift       # Global hotkey registration
+    ├── LaunchAtLogin.swift       # SMAppService launch-at-login binding
+    ├── DeviceIDFilter.swift      # Filters legacy MAC-format device IDs
+    ├── ScriptCommands.swift      # AppleScript play/pause verbs
+    └── UpdateChecker.swift       # GitHub release checker
 ```
 
 All protocol, crypto, discovery, and device management code lives in [itsytv-core](https://github.com/nickustinov/itsytv-core).
@@ -107,7 +107,7 @@ All protocol, crypto, discovery, and device management code lives in [itsytv-cor
 ## Requirements
 
 - macOS 14.0 or later
-- Xcode 16.0 or later
+- Xcode 26.0 or later
 - [XcodeGen](https://github.com/yonaskolb/XcodeGen) for project generation
 - Apple TV running tvOS 15 or later on the same local network
 
