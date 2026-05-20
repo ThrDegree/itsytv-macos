@@ -263,7 +263,7 @@ struct NowPlayingBar: View {
             // Color.clear with only .aspectRatio has no ideal size in a VStack.
             let artworkWidth: CGFloat = 144
             if let data = np?.artworkData, let image = NSImage(data: data) {
-                let pxSize = image.size != .zero ? image.size : (image.representations.first.map { CGSize(width: CGFloat($0.pixelsWide), height: CGFloat($0.pixelsHigh)) } ?? CGSize(width: artworkWidth, height: artworkWidth))
+                let pxSize = image.size != .zero ? image.size : (image.representations.first.map { CGSize(width: max(CGFloat($0.pixelsWide), 1), height: max(CGFloat($0.pixelsHigh), 1)) } ?? CGSize(width: artworkWidth, height: artworkWidth))
                 let height = artworkWidth / max(pxSize.width / max(pxSize.height, 1), 0.01)
                 Color.clear
                     .frame(maxWidth: .infinity)
@@ -390,13 +390,13 @@ struct NowPlayingProgress: View {
                 .gesture(
                     DragGesture(minimumDistance: 0)
                         .onChanged { value in
-                            guard effectiveDuration > 0 else { return }
+                            guard effectiveDuration > 0, geo.size.width > 0 else { return }
                             isSeeking = true
                             let fraction = max(0, min(1, value.location.x / geo.size.width))
                             seekTime = fraction * effectiveDuration
                         }
                         .onEnded { value in
-                            guard effectiveDuration > 0 else { return }
+                            guard effectiveDuration > 0, geo.size.width > 0 else { return }
                             let fraction = max(0, min(1, value.location.x / geo.size.width))
                             let position = fraction * effectiveDuration
                             onSeek?(position)
@@ -792,6 +792,10 @@ private class RemoteButtonGestureNSView: NSView {
         holdTimer = nil
         guard !holdFired else { return }
         onInput?(.click)
+    }
+
+    deinit {
+        holdTimer?.invalidate()
     }
 }
 
