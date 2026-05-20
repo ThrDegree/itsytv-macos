@@ -257,23 +257,18 @@ struct NowPlayingBar: View {
         let hasContent = np != nil
 
         VStack(spacing: 6) {
-            // Artwork — full width, square
+            // Artwork — full width, natural aspect ratio
             if let data = np?.artworkData, let image = NSImage(data: data) {
-                Color.clear
+                Image(nsImage: image)
+                    .resizable()
+                    .aspectRatio(contentMode: .fit)
                     .frame(maxWidth: .infinity)
-                    .frame(height: 160)
-                    .overlay {
-                        Image(nsImage: image)
-                            .resizable()
-                            .aspectRatio(contentMode: .fill)
-                    }
-                    .clipped()
                     .cornerRadius(6)
             } else {
                 RoundedRectangle(cornerRadius: 6)
                     .fill(.quaternary)
+                    .aspectRatio(1, contentMode: .fit)
                     .frame(maxWidth: .infinity)
-                    .frame(height: 160)
             }
 
             // Title + artist
