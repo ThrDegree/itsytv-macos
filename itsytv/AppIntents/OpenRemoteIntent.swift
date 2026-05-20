@@ -31,8 +31,7 @@ struct AppleTVDeviceQuery: EntityQuery {
     /// Returns paired devices, filtering out stale rpBA (MAC address) entries.
     private func pairedDeviceEntities() -> [AppleTVDeviceEntity] {
         let allIDs = KeychainStorage.allPairedDeviceIDs()
-        let macPattern = /^[0-9A-Fa-f]{2}(:[0-9A-Fa-f]{2}){5}$/
-        let filtered = allIDs.filter { $0.wholeMatch(of: macPattern) == nil }
+        let filtered = filterMACAddresses(allIDs)
         log.debug("pairedDeviceEntities: allIDs=\(allIDs, privacy: .public) filtered=\(filtered, privacy: .public)")
         return filtered.map { AppleTVDeviceEntity(id: $0) }
     }
@@ -43,6 +42,9 @@ struct OpenRemoteIntent: AppIntent {
     static var description: IntentDescription = "Opens the itsytv remote control panel for an Apple TV"
     static var openAppWhenRun = true
 
+    private static let maxAttempts = 20
+    private static let retryInterval: UInt64 = 250_000_000 // 250ms in nanoseconds
+
     @Parameter(title: "Apple TV", description: "Which Apple TV to control")
     var device: AppleTVDeviceEntity
 
@@ -50,7 +52,7 @@ struct OpenRemoteIntent: AppIntent {
     func perform() async throws -> some IntentResult {
         log.debug("Intent perform() called, device=\(device.id)")
 
-        for i in 0..<20 {
+        for i in 0..<Self.maxAttempts {
             let delegate = AppDelegate.shared
             let controller = delegate?.appController
             log.debug("Attempt \(i): delegate=\(delegate == nil ? "nil" : "set") controller=\(controller == nil ? "nil" : "set")")
@@ -59,7 +61,7 @@ struct OpenRemoteIntent: AppIntent {
                 controller.openRemote(for: device.id)
                 return .result()
             }
-            try await Task.sleep(nanoseconds: 250_000_000)
+            try await Task.sleep(nanoseconds: Self.retryInterval)
         }
 
         log.error("Intent timed out waiting for app")

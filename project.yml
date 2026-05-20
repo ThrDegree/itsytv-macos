@@ -66,6 +66,7 @@ targets:
       - path: itsytv/Utilities/VersionComparator.swift
       - path: itsytv/Utilities/PlaybackMath.swift
       - path: itsytv/Utilities/HotkeyManager.swift
+      - path: itsytv/Utilities/DeviceIDFilter.swift
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.itsytv.itsytvTests

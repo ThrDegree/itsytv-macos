@@ -178,4 +178,42 @@ struct HotkeyStorageTests {
         #expect(all["d1"] == k1)
         #expect(all["d2"] == k2)
     }
+
+    // MARK: - Save round-trip
+
+    @Test func saveAndLoadRoundTrip() {
+        let keys = ShortcutKeys(modifiers: cmd | shift, keyCode: 36)
+        HotkeyStorage.save(deviceID: "tv-rt", keys: keys)
+        defer { HotkeyStorage.save(deviceID: "tv-rt", keys: nil) }
+        #expect(HotkeyStorage.load(deviceID: "tv-rt") == keys)
+    }
+
+    @Test func saveNilRemovesEntry() {
+        let keys = ShortcutKeys(modifiers: cmd, keyCode: 53)
+        HotkeyStorage.save(deviceID: "tv-del", keys: keys)
+        HotkeyStorage.save(deviceID: "tv-del", keys: nil)
+        #expect(HotkeyStorage.load(deviceID: "tv-del") == nil)
+    }
+
+    @Test func saveOverwritesExistingEntry() {
+        let original = ShortcutKeys(modifiers: cmd, keyCode: 36)
+        let updated  = ShortcutKeys(modifiers: opt, keyCode: 126)
+        HotkeyStorage.save(deviceID: "tv-ow", keys: original)
+        HotkeyStorage.save(deviceID: "tv-ow", keys: updated)
+        defer { HotkeyStorage.save(deviceID: "tv-ow", keys: nil) }
+        #expect(HotkeyStorage.load(deviceID: "tv-ow") == updated)
+    }
+
+    @Test func saveDoesNotAffectOtherDevices() {
+        let k1 = ShortcutKeys(modifiers: cmd, keyCode: 36)
+        let k2 = ShortcutKeys(modifiers: opt, keyCode: 126)
+        HotkeyStorage.save(deviceID: "tv-a", keys: k1)
+        HotkeyStorage.save(deviceID: "tv-b", keys: k2)
+        defer {
+            HotkeyStorage.save(deviceID: "tv-a", keys: nil)
+            HotkeyStorage.save(deviceID: "tv-b", keys: nil)
+        }
+        #expect(HotkeyStorage.load(deviceID: "tv-a") == k1)
+        #expect(HotkeyStorage.load(deviceID: "tv-b") == k2)
+    }
 }
