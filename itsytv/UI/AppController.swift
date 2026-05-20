@@ -210,16 +210,14 @@ final class AppController: NSObject {
         lastKnownStatus = currentStatus
         lastKnownDeviceCount = currentDeviceCount
 
-        switch currentStatus {
-        case .disconnected:
+        switch panelTransition(from: previousStatus, to: currentStatus) {
+        case .dismiss:
             pairingCache.refresh()
-            if previousStatus != .disconnected {
-                dismissPanel()
-            }
-        case .connected:
+            dismissPanel()
+        case .show:
             if case .pairing = previousStatus { pairingCache.refresh() }
             showPanel()
-        default:
+        case .none:
             break
         }
     }

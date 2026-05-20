@@ -70,3 +70,57 @@ struct PlaybackMathTests {
         #expect(formatPlaybackTime(59.9) == "0:59")
     }
 }
+
+// MARK: - localProgressionTick
+
+struct LocalProgressionTickTests {
+
+    // MARK: - Pause / play guard (regression: bar drifted when paused)
+
+    @Test func pausedDoesNotAdvance() {
+        // The bug: `currentTime > 0` was ORed with `isPlaying`, causing drift.
+        #expect(localProgressionTick(currentTime: 30, duration: 60, isPlaying: false, pendingSeekTarget: nil) == nil)
+    }
+
+    @Test func pausedAtZeroDoesNotAdvance() {
+        #expect(localProgressionTick(currentTime: 0, duration: 60, isPlaying: false, pendingSeekTarget: nil) == nil)
+    }
+
+    @Test func playingAdvancesByOne() {
+        #expect(localProgressionTick(currentTime: 30, duration: 60, isPlaying: true, pendingSeekTarget: nil) == 31)
+    }
+
+    @Test func playingFromZeroAdvances() {
+        #expect(localProgressionTick(currentTime: 0, duration: 60, isPlaying: true, pendingSeekTarget: nil) == 1)
+    }
+
+    // MARK: - Duration guard
+
+    @Test func zeroDurationSkips() {
+        #expect(localProgressionTick(currentTime: 0, duration: 0, isPlaying: true, pendingSeekTarget: nil) == nil)
+    }
+
+    @Test func negativeDurationSkips() {
+        #expect(localProgressionTick(currentTime: 0, duration: -1, isPlaying: true, pendingSeekTarget: nil) == nil)
+    }
+
+    // MARK: - Clamp at duration
+
+    @Test func clampsAtDuration() {
+        #expect(localProgressionTick(currentTime: 60, duration: 60, isPlaying: true, pendingSeekTarget: nil) == 60)
+    }
+
+    @Test func doesNotExceedDuration() {
+        #expect(localProgressionTick(currentTime: 59.5, duration: 60, isPlaying: true, pendingSeekTarget: nil) == 60)
+    }
+
+    // MARK: - Pending seek suppresses local fallback
+
+    @Test func pendingSeekSuppressesAdvance() {
+        #expect(localProgressionTick(currentTime: 30, duration: 60, isPlaying: true, pendingSeekTarget: 45) == nil)
+    }
+
+    @Test func nilSeekTargetAllowsAdvance() {
+        #expect(localProgressionTick(currentTime: 30, duration: 60, isPlaying: true, pendingSeekTarget: nil) == 31)
+    }
+}

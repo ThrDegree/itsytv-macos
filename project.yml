@@ -67,6 +67,9 @@ targets:
       - path: itsytv/Utilities/PlaybackMath.swift
       - path: itsytv/Utilities/HotkeyManager.swift
       - path: itsytv/Utilities/DeviceIDFilter.swift
+      - path: itsytv/Utilities/PanelTransition.swift
+    dependencies:
+      - package: ItsytvCore
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.itsytv.itsytvTests
