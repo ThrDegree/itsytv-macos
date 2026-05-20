@@ -257,19 +257,28 @@ struct NowPlayingBar: View {
         let hasContent = np != nil
 
         VStack(spacing: 6) {
-            // Artwork — full width, natural aspect ratio
+            // Artwork — full width, natural aspect ratio.
+            // panelWidth (176) − NowPlayingBar h-padding (2×16) = 144.
+            // We need a concrete height so SwiftUI can lay out the container;
+            // Color.clear with only .aspectRatio has no ideal size in a VStack.
+            let artworkWidth: CGFloat = 144
             if let data = np?.artworkData, let image = NSImage(data: data) {
-                let ratio = image.size.height > 0 ? image.size.width / image.size.height : 1.0
-                Image(nsImage: image)
-                    .resizable()
-                    .aspectRatio(ratio, contentMode: .fit)
+                let pxSize = image.size != .zero ? image.size : (image.representations.first.map { CGSize(width: CGFloat($0.pixelsWide), height: CGFloat($0.pixelsHigh)) } ?? CGSize(width: artworkWidth, height: artworkWidth))
+                let height = artworkWidth / max(pxSize.width / max(pxSize.height, 1), 0.01)
+                Color.clear
                     .frame(maxWidth: .infinity)
-                    .cornerRadius(6)
+                    .frame(height: height)
+                    .overlay {
+                        Image(nsImage: image)
+                            .resizable()
+                            .scaledToFill()
+                    }
+                    .clipShape(RoundedRectangle(cornerRadius: 6))
             } else {
                 RoundedRectangle(cornerRadius: 6)
                     .fill(.quaternary)
-                    .aspectRatio(1, contentMode: .fit)
                     .frame(maxWidth: .infinity)
+                    .frame(height: artworkWidth)
             }
 
             // Title + artist
