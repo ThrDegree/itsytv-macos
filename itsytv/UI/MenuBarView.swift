@@ -799,6 +799,142 @@ private class RemoteButtonGestureNSView: NSView {
     }
 }
 
+/// Transparent layer over the D-pad that turns a precise trackpad / Magic Mouse
+/// swipe into the core's real-time touch stream — the macOS analogue of the
+/// iOS pan-over-dpad gesture. It listens via a local `.scrollWheel` monitor
+/// rather than the responder chain, so it never intercepts the button clicks
+/// layered beneath it; a swipe is only claimed while the cursor is over the pad.
+private struct DPadSwipeCapture: NSViewRepresentable {
+    let onBegan: () -> Void
+    let onChanged: (CGPoint) -> Void
+    let onEnded: (CGPoint, CGPoint) -> Void
+
+    func makeNSView(context: Context) -> DPadSwipeCaptureView {
+        let view = DPadSwipeCaptureView()
+        view.onBegan = onBegan
+        view.onChanged = onChanged
+        view.onEnded = onEnded
+        return view
+    }
+
+    func updateNSView(_ nsView: DPadSwipeCaptureView, context: Context) {
+        nsView.onBegan = onBegan
+        nsView.onChanged = onChanged
+        nsView.onEnded = onEnded
+    }
+
+    static func dismantleNSView(_ nsView: DPadSwipeCaptureView, coordinator: ()) {
+        nsView.teardown()
+    }
+}
+
+private final class DPadSwipeCaptureView: NSView {
+    var onBegan: (() -> Void)?
+    var onChanged: ((CGPoint) -> Void)?
+    var onEnded: ((CGPoint, CGPoint) -> Void)?
+
+    // Apple TV touch surface is direct-manipulation: a swipe up should move the
+    // highlight up. macOS reports a swipe-up as a positive `scrollingDeltaY`,
+    // but the core treats positive translation.y as downward, so vertical is
+    // inverted. Flip either constant if a swipe navigates the wrong way.
+    private let invertVertical = false
+    private let invertHorizontal = false
+
+    // Scales raw scroll deltas before they drive the touch stream. Lower = less
+    // sensitive; tune to taste. Applied to both translation and release velocity
+    // so the inertia after a flick stays proportional.
+    private let sensitivity: CGFloat = 0.25
+
+    private var monitor: Any?
+    private var active = false
+    private var translation: CGPoint = .zero
+    private var velocity: CGPoint = .zero
+    private var lastMoveTime: TimeInterval = 0
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        if window != nil { installMonitor() } else { teardown() }
+    }
+
+    deinit { teardown() }
+
+    func teardown() {
+        if let monitor { NSEvent.removeMonitor(monitor) }
+        monitor = nil
+    }
+
+    private func installMonitor() {
+        guard monitor == nil else { return }
+        monitor = NSEvent.addLocalMonitorForEvents(matching: .scrollWheel) { [weak self] event in
+            self?.handle(event) ?? event
+        }
+    }
+
+    private func cursorIsOverDPad(_ event: NSEvent) -> Bool {
+        guard let window, event.window === window else { return false }
+        return convert(bounds, to: nil).contains(event.locationInWindow)
+    }
+
+    /// Returns `nil` to swallow the event (so it never scrolls anything beneath
+    /// the pad), or the event to let it propagate normally.
+    private func handle(_ event: NSEvent) -> NSEvent? {
+        // Only precise gestures (trackpad / Magic Mouse) act as swipes; a
+        // classic notched wheel keeps its normal behaviour.
+        guard event.hasPreciseScrollingDeltas else { return event }
+        guard active || cursorIsOverDPad(event) else { return event }
+
+        // `scrollingDelta*` is pre-inverted to match the system "Natural scrolling"
+        // setting; `isDirectionInvertedFromDevice` is true exactly when that has
+        // been applied. Normalize so the swipe always tracks the finger
+        // (content-following, like the Apple TV touch surface) regardless of it.
+        let naturalize: CGFloat = event.isDirectionInvertedFromDevice ? 1 : -1
+        let dx = event.scrollingDeltaX * naturalize * (invertHorizontal ? -1 : 1) * sensitivity
+        let dy = event.scrollingDeltaY * naturalize * (invertVertical ? -1 : 1) * sensitivity
+
+        switch event.phase {
+        case .began:
+            begin()
+            apply(dx: dx, dy: dy, timestamp: event.timestamp)
+        case .changed:
+            if !active { begin() }
+            apply(dx: dx, dy: dy, timestamp: event.timestamp)
+        case .ended, .cancelled:
+            end()
+        default:
+            // Momentum (phase == []) arrives after the fingers lift; the core
+            // runs its own inertia from the release velocity, so drop it.
+            return cursorIsOverDPad(event) ? nil : event
+        }
+        return nil
+    }
+
+    private func begin() {
+        active = true
+        translation = .zero
+        velocity = .zero
+        lastMoveTime = 0
+        onBegan?()
+    }
+
+    private func apply(dx: CGFloat, dy: CGFloat, timestamp: TimeInterval) {
+        guard active else { return }
+        translation.x += dx
+        translation.y += dy
+        if lastMoveTime > 0 {
+            let dt = max(timestamp - lastMoveTime, 1.0 / 1000)
+            velocity = CGPoint(x: dx / dt, y: dy / dt)
+        }
+        lastMoveTime = timestamp
+        onChanged?(translation)
+    }
+
+    private func end() {
+        guard active else { return }
+        active = false
+        onEnded?(translation, velocity)
+    }
+}
+
 struct DPadView: View {
     @Environment(AppleTVManager.self) private var manager
     let onPress: (CompanionButton, InputAction) -> Void
@@ -852,6 +988,16 @@ struct DPadView: View {
                 .frame(width: size, height: size)
                 .allowsHitTesting(false)
         }
+        // Swipe over the pad (trackpad / Magic Mouse) streams as a touch,
+        // matching iOS. Hit testing stays off so button clicks pass through.
+        .overlay(
+            DPadSwipeCapture(
+                onBegan: { manager.touchBegan(referenceSize: CGSize(width: size * 1.5, height: size * 1.5)) },
+                onChanged: { manager.touchMoved(translation: $0) },
+                onEnded: { manager.touchEnded(translation: $0, velocity: $1) }
+            )
+            .allowsHitTesting(false)
+        )
         .onChange(of: manager.keyboardBlinkCounter) { _, _ in
             if Self.dpadButtons.contains(manager.keyboardBlinkButton) { blink() }
         }

@@ -2,6 +2,7 @@
 
 ## 1.6.0
 
+- Add swipe over the D-pad to navigate, via a two-finger trackpad swipe or a Magic Mouse swipe, matching the iOS app; direction follows your finger regardless of the natural scrolling setting
 - First-time setup: clicking the menu bar icon now opens a panel showing discovered Apple TVs with a "Pair" button, replacing the old dropdown menu
 - Clicking the menu bar icon while the panel is open now closes it (regardless of connection state)
 - Clicking outside the panel while in setup/disconnected state now dismisses it correctly
