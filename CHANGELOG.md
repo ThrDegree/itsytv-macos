@@ -3,6 +3,7 @@
 ## 1.6.0
 
 - Add swipe over the D-pad to navigate, via a two-finger trackpad swipe or a Magic Mouse swipe, matching the iOS app; direction follows your finger regardless of the natural scrolling setting
+- Fix being unable to unpair an Apple TV that has forgotten the pairing – the connection-error screen now offers "Unpair this Apple TV", and the "Taking too long?" unpair hint now reliably appears when a connection is stuck (#44)
 - First-time setup: clicking the menu bar icon now opens a panel showing discovered Apple TVs with a "Pair" button, replacing the old dropdown menu
 - Clicking the menu bar icon while the panel is open now closes it (regardless of connection state)
 - Clicking outside the panel while in setup/disconnected state now dismisses it correctly
