@@ -1,4 +1,5 @@
 import SwiftUI
+import Combine
 import ItsytvCore
 
 enum RemoteTab: String, CaseIterable {
@@ -1280,6 +1281,7 @@ private final class PairingKeyNSView: NSView {
 }
 
 struct ErrorView: View {
+    @Environment(AppleTVManager.self) private var manager
     @Environment(\.dismissAction) private var dismissAction
     let message: String
 
