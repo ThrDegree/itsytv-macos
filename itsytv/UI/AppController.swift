@@ -105,7 +105,8 @@ final class AppController: NSObject {
 
     private var pendingOpenDeviceID: String?
 
-    func openRemote(for deviceID: String? = nil) {
+    @discardableResult
+    func openRemote(for deviceID: String? = nil) -> Bool {
         let targetID: String?
         if let deviceID {
             targetID = deviceID
@@ -121,7 +122,7 @@ final class AppController: NSObject {
         log.debug("openRemote: targetID=\(targetID ?? "nil", privacy: .public) discoveredCount=\(discoveredCount, privacy: .public)")
         guard let targetID else {
             log.debug("openRemote: no targetID, returning")
-            return
+            return false
         }
 
         if let device = manager.discoveredDevices.first(where: { $0.id == targetID }) {
@@ -131,6 +132,7 @@ final class AppController: NSObject {
             log.debug("openRemote: device not discovered yet, setting pendingOpenDeviceID")
             pendingOpenDeviceID = targetID
         }
+        return true
     }
 
     private func connectAndShow(_ device: AppleTVDevice) {
@@ -168,9 +170,9 @@ final class AppController: NSObject {
         }
 
         manager.refreshScanning()
-        if !pairingCache.pairedIDs.isEmpty {
-            openRemote()
-        } else {
+        // Fall back to the device list when no saved pairing matches a discovered device,
+        // otherwise the click would silently do nothing.
+        if pairingCache.pairedIDs.isEmpty || !openRemote() {
             showPanel()
         }
     }
